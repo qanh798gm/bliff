@@ -13,9 +13,10 @@ export async function createSession(
   mode: SessionMode = 'interview',
   voiceLanguage = 'en-US'
 ): Promise<SessionRow> {
+  const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase
     .from('sessions')
-    .insert({ mode, voice_language: voiceLanguage })
+    .insert({ mode, voice_language: voiceLanguage, user_id: user?.id ?? null })
     .select()
     .single()
 
@@ -46,12 +47,14 @@ export async function createAttempt(
   sessionId: string,
   questionId: string
 ): Promise<AttemptRow> {
+  const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase
     .from('attempts')
     .insert({
       session_id: sessionId,
       question_id: questionId,
       status: 'in_progress',
+      user_id: user?.id ?? null,
     })
     .select()
     .single()

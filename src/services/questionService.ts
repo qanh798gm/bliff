@@ -39,12 +39,12 @@ export async function fetchQuestionById(id: string): Promise<QuestionRow> {
 
 // ── Fetch questions for a topic ──────────────────────────────
 export async function fetchQuestionsByTopic(
-  topicSlug: string
+  topicId: string
 ): Promise<QuestionRow[]> {
   const { data, error } = await supabase
     .from('questions')
-    .select('*, topics!inner(slug)')
-    .eq('topics.slug', topicSlug)
+    .select('*')
+    .eq('topic_id', topicId)
     .eq('is_active', true)
     .order('difficulty')
 

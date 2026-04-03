@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useInterview } from '../hooks/useInterview'
 import { useVoice } from '../hooks/useVoice'
 import { ChatTranscript } from './ChatTranscript'
@@ -7,6 +8,31 @@ import { VoiceControls } from './VoiceControls'
 import { QuestionPanel } from './QuestionPanel'
 import { TestResultsPanel } from './TestResultsPanel'
 import type { VoiceLanguage } from '../types'
+
+// ── Timer hook ───────────────────────────────────────────────
+function useTimer(running: boolean) {
+  const [elapsed, setElapsed] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (running) {
+      intervalRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [running])
+
+  const reset = () => setElapsed(0)
+
+  const formatted = (() => {
+    const m = Math.floor(elapsed / 60).toString().padStart(2, '0')
+    const s = (elapsed % 60).toString().padStart(2, '0')
+    return `${m}:${s}`
+  })()
+
+  return { formatted, reset }
+}
 
 // ============================================================
 // InterviewRoom — main interview UI
@@ -17,12 +43,22 @@ type ActiveTab = 'question' | 'chat'
 type RightTab = 'editor' | 'tests'
 
 export function InterviewRoom() {
-  const interview = useInterview()
+  const { slug } = useParams<{ slug?: string }>()
+  const interview = useInterview(slug)
+  const navigate = useNavigate()
   const [code, setCode] = useState(interview.question.functionSignature)
   const [textInput, setTextInput] = useState('')
+
+  // Reset editor to the fetched question's function signature whenever the question changes
+  useEffect(() => {
+    setCode(interview.question.functionSignature)
+  }, [interview.question.functionSignature])
   const [activeLeftTab, setActiveLeftTab] = useState<ActiveTab>('question')
   const [activeRightTab, setActiveRightTab] = useState<RightTab>('editor')
   const [language, setLanguage] = useState<VoiceLanguage>('en-US')
+
+  const timerRunning = interview.stage !== 'idle' && interview.stage !== 'feedback'
+  const { formatted: timerFormatted, reset: resetTimer } = useTimer(timerRunning)
 
   // When AI responds, speak the latest assistant message
   const lastSpokenRef = useRef<string>('')
@@ -78,6 +114,7 @@ export function InterviewRoom() {
 
   const stageLabel: Record<typeof interview.stage, string> = {
     idle: '● Ready',
+    warmup: '● Warm-up',
     present: '● Problem Presented',
     clarify: '● Clarifying',
     solve: '● Solving',
@@ -87,6 +124,7 @@ export function InterviewRoom() {
 
   const stageColor: Record<typeof interview.stage, string> = {
     idle: 'text-gray-500',
+    warmup: 'text-teal-400',
     present: 'text-blue-400',
     clarify: 'text-yellow-400',
     solve: 'text-green-400',
@@ -99,11 +137,24 @@ export function InterviewRoom() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-bold text-indigo-400">Bliff</span>
-          <span className="text-xs text-gray-500">DSA Interview Coach</span>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="text-indigo-400 font-bold text-xl hover:text-indigo-300 transition-colors"
+          >
+            bli<span className="text-white">ff</span>
+          </button>
+          <span className="text-xs text-gray-500">Interview</span>
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Live timer */}
+          {interview.stage !== 'idle' && interview.stage !== 'warmup' && (
+            <span className="text-sm font-mono text-gray-300 tabular-nums">
+              ⏱ {timerFormatted}
+            </span>
+          )}
+
+          {/* Stage indicator */}
           <span className={`text-xs font-medium ${stageColor[interview.stage]}`}>
             {stageLabel[interview.stage]}
           </span>
@@ -119,12 +170,28 @@ export function InterviewRoom() {
         <div className="flex items-center gap-2">
           {interview.stage === 'idle' ? (
             <button
-              onClick={() => void interview.startSession()}
-              disabled={interview.isLoadingQuestion}
+              onClick={() => void interview.startWarmup()}
+              disabled={interview.isThinking}
               className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             >
-              {interview.isLoadingQuestion ? '⏳ Loading…' : 'Start Interview'}
+              {interview.isThinking ? '⏳ Loading…' : 'Start'}
             </button>
+          ) : interview.stage === 'warmup' ? (
+            <>
+              <button
+                onClick={() => void interview.beginInterview()}
+                disabled={interview.isLoadingQuestion || interview.isThinking}
+                className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+              >
+                {interview.isLoadingQuestion ? '⏳ Loading…' : '🎯 Begin Interview'}
+              </button>
+              <button
+                onClick={() => { interview.resetSession(); resetTimer() }}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -142,7 +209,7 @@ export function InterviewRoom() {
                 End &amp; Feedback
               </button>
               <button
-                onClick={interview.resetSession}
+                onClick={() => { interview.resetSession(); resetTimer() }}
                 className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-medium rounded-lg transition-colors"
               >
                 Reset

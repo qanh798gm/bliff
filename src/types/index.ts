@@ -4,7 +4,8 @@
 
 // --- Interview Stage ---
 export type InterviewStage =
-  | 'idle'       // Not in a session
+  | 'idle'       // Not started
+  | 'warmup'     // Free chat with AI before any problem (greeter / warm-up)
   | 'present'    // AI is presenting the problem
   | 'clarify'    // User is asking clarifying questions
   | 'solve'      // User is working on solution
@@ -89,6 +90,10 @@ export type VoiceStatus =
 
 // --- Voice language ---
 export type VoiceLanguage = 'en-US' | 'vi-VN'
+
+// --- User profile types ---
+export type ExperienceLevel = 'junior' | 'mid' | 'senior'
+export type InterviewFocus = 'dsa' | 'frontend' | 'both'
 
 // --- LLM config ---
 export interface LLMConfig {

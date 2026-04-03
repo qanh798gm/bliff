@@ -59,7 +59,9 @@ export interface UserProfileRow {
   id: string
   display_name: string
   experience_years: number
+  experience_level: 'junior' | 'mid' | 'senior'
   primary_role: string
+  interview_focus: 'dsa' | 'frontend' | 'both'
   target_companies: string[]
   preferred_languages: string[]
   voice_language: string
@@ -69,8 +71,20 @@ export interface UserProfileRow {
   current_streak: number
   longest_streak: number
   last_session_date: string | null
+  weekly_goal: number
+  onboarding_completed: boolean
   created_at: string
   updated_at: string
+}
+
+// ---- Materialized view: topic_stats (joined with topics) ------
+export interface TopicStatRow {
+  topic_id: string
+  topic_name: string
+  attempts_count: number
+  solved_count: number
+  mastery_score: number   // 0–1 float
+  last_attempted_at: string | null
 }
 
 export interface UserTopicStatsRow {
@@ -89,6 +103,7 @@ export interface UserTopicStatsRow {
 
 export interface SessionRow {
   id: string
+  user_id: string | null
   started_at: string
   ended_at: string | null
   mode: SessionMode
@@ -117,6 +132,7 @@ export interface AttemptRow {
   id: string
   session_id: string
   question_id: string
+  user_id: string | null
   started_at: string
   ended_at: string | null
   duration_seconds: number | null

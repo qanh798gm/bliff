@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import type { UserProfileRow, UserTopicStatsRow, TopicRow } from '../types/database'
+import type { UserProfileRow, UserTopicStatsRow, TopicRow, TopicStatRow } from '../types/database'
 
 // ── Get the single user profile ─────────────────────────────
 export async function getProfile(): Promise<UserProfileRow | null> {
@@ -106,4 +106,86 @@ export async function buildProfileSummary(): Promise<string> {
   ].filter(Boolean)
 
   return lines.join('\n')
+}
+
+// ── Load profile ─────────────────────────────────────────────
+export async function loadProfile(userId: string): Promise<UserProfileRow | null> {
+  const { data, error } = await supabase
+    .from('user_profile')
+    .select('*')
+    .eq('id', userId)
+    .single()
+
+  if (error?.code === 'PGRST116') return null // not found
+  if (error) throw error
+  return data as UserProfileRow
+}
+
+// ── Load topic stats (joined with topic name) ────────────────
+export async function loadTopicStats(userId: string): Promise<TopicStatRow[]> {
+  const { data, error } = await supabase
+    .from('user_topic_stats')
+    .select('topic_id, attempts_count, solved_count, mastery_level, last_attempted_at, topics(name)')
+    .eq('user_id', userId)
+
+  if (error) throw error
+  if (!data) return []
+
+  return (data as unknown as Array<{
+    topic_id: string
+    attempts_count: number
+    solved_count: number
+    mastery_level: string
+    last_attempted_at: string | null
+    topics: { name: string } | null
+  }>).map(row => ({
+    topic_id: row.topic_id,
+    topic_name: row.topics?.name ?? row.topic_id,
+    attempts_count: row.attempts_count,
+    solved_count: row.solved_count,
+    mastery_score: masteryLevelToScore(row.mastery_level),
+    last_attempted_at: row.last_attempted_at,
+  }))
+}
+
+function masteryLevelToScore(level: string): number {
+  switch (level) {
+    case 'not_started': return 0
+    case 'learning': return 0.2
+    case 'practicing': return 0.45
+    case 'proficient': return 0.7
+    case 'mastered': return 0.95
+    default: return 0
+  }
+}
+
+// ── Create or update full profile (used by onboarding) ──────
+export async function saveProfile(
+  userId: string,
+  data: {
+    display_name: string
+    experience_level: string
+    interview_focus: string
+    target_companies: string[]
+    weekly_goal: number
+    onboarding_completed: boolean
+  }
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_profile')
+    .upsert(
+      {
+        id: userId,
+        display_name: data.display_name,
+        experience_level: data.experience_level,
+        interview_focus: data.interview_focus,
+        target_companies: data.target_companies,
+        weekly_goal: data.weekly_goal,
+        onboarding_completed: data.onboarding_completed,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    )
+
+  if (error) throw error
 }

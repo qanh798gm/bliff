@@ -3,7 +3,7 @@ import type { Message, InterviewStage, Question, TestResult } from '../types'
 import { streamChatCompletion } from '../services/llm'
 import { buildSystemPrompt, parseFeedbackJson, type PromptContext } from '../lib/promptBuilder'
 import { runTests, formatResultsForAI } from '../services/codeRunner'
-import { selectNextQuestion } from '../services/questionService'
+import { selectNextQuestion, fetchQuestionBySlug } from '../services/questionService'
 import { buildProfileSummary, getTopicStats } from '../services/profileService'
 import {
   createSession,
@@ -31,6 +31,8 @@ interface UseInterviewReturn {
   isRunningTests: boolean
   isLoadingQuestion: boolean
   sendMessage: (text: string) => Promise<void>
+  startWarmup: () => Promise<void>
+  beginInterview: () => Promise<void>
   startSession: () => Promise<void>
   submitCode: (code: string) => Promise<void>
   runCode: (code: string) => Promise<void>
@@ -48,7 +50,7 @@ function makeMessage(role: Message['role'], content: string): Message {
   }
 }
 
-export function useInterview(): UseInterviewReturn {
+export function useInterview(slug?: string): UseInterviewReturn {
   const [stage, setStage] = useState<InterviewStage>('idle')
   const [messages, setMessages] = useState<Message[]>([])
   const [isThinking, setIsThinking] = useState(false)
@@ -172,8 +174,11 @@ export function useInterview(): UseInterviewReturn {
       // Build prompt context from profile data
       promptCtxRef.current = { profileSummary }
 
-      // Try to select adaptive question from DB
-      const row = await selectNextQuestion(recentIds).catch(() => null)
+      // If a specific question was requested (from question browser), load it;
+      // otherwise fall back to the adaptive selector
+      const row = slug
+        ? await fetchQuestionBySlug(slug).catch(() => null)
+        : await selectNextQuestion(recentIds).catch(() => null)
       if (row) {
         const q = rowToQuestion(row)
         // Enrich topic mastery context
@@ -232,7 +237,7 @@ export function useInterview(): UseInterviewReturn {
     } finally {
       setIsThinking(false)
     }
-  }, [question])
+  }, [question, slug])
 
   // Run test cases without submitting
   const runCode = useCallback(async (code: string) => {
@@ -316,6 +321,66 @@ export function useInterview(): UseInterviewReturn {
     }
   }, [sendMessage, messages, hintsGiven, askedClarifying])
 
+  // ── Warm-up mode: free chat with AI before any problem ──────
+  const startWarmup = useCallback(async () => {
+    setStageSync('warmup')
+    setMessages([])
+    conversationLogRef.current = []
+    setIsThinking(true)
+
+    const profileSummary = await buildProfileSummary().catch(() => '')
+    const warmupSystemPrompt = [
+      'You are Bliff, a friendly AI technical interview coach.',
+      'The candidate has just opened the interview room.',
+      'This is the warm-up phase — have a casual, encouraging conversation.',
+      'You can: greet them, ask how they are feeling, briefly review topics they want to focus on,',
+      'give a quick pep-talk, or answer general algorithm questions.',
+      'Do NOT present any coding problems yet — that happens when they click "Begin Interview".',
+      profileSummary ? `\nCandidate profile:\n${profileSummary}` : '',
+    ].filter(Boolean).join('\n')
+
+    const greeting: Message = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+    }
+    setMessages([greeting])
+
+    // Use a single synthetic user message to trigger the greeting
+    const initMsg: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: 'Hi, I just opened the interview room.',
+      timestamp: Date.now(),
+    }
+
+    try {
+      let full = ''
+      await streamChatCompletion(warmupSystemPrompt, [initMsg], (chunk: string) => {
+        full += chunk
+        setMessages([{ ...greeting, content: full }])
+      })
+      conversationLogRef.current = [
+        { role: 'assistant', content: full, timestamp: new Date().toISOString() },
+      ]
+    } catch {
+      setMessages([{
+        ...greeting,
+        content: `Hi! I'm Bliff, your interview coach. Ready when you are — click "Begin Interview" to start!`,
+      }])
+    } finally {
+      setIsThinking(false)
+    }
+  }, [])
+
+  // ── Transition warm-up → full interview session ──────────────
+  const beginInterview = useCallback(async () => {
+    setMessages([])
+    conversationLogRef.current = []
+    await startSession()
+  }, [startSession])
+
   // Reset everything
   const resetSession = useCallback(() => {
     setStageSync('idle')
@@ -342,6 +407,8 @@ export function useInterview(): UseInterviewReturn {
     isRunningTests,
     isLoadingQuestion,
     sendMessage,
+    startWarmup,
+    beginInterview,
     startSession,
     submitCode,
     runCode,

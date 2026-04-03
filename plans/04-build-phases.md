@@ -74,41 +74,43 @@ Select question via weighted random from top candidates.
 
 ---
 
-## Phase 3: Dashboard + Polish + Advanced Features
+## Phase 3: Dashboard + Auth + Polish ✅ COMPLETED
 
-**Goal**: Full experience. Visual progress, streak tracking, refined AI behavior.
+**Goal**: Full experience. Visual progress, streak tracking, auth, routing.
 
-### Deliverables
-1. **Progress dashboard page** with:
-   - Topic mastery radar/bar chart (using Recharts or Chart.js)
-   - Solved vs attempted vs gave-up per topic
-   - Average score trend over time
-   - Current streak display
-2. **Streak system** — Calculate from `sessions` table, update `user_profiles`
-3. **Weak area spotlight** — Highlight bottom 3 topics, suggest next question from those
-4. **Session history page** — List of past sessions with:
-   - Questions attempted
-   - Scores received
-   - Expandable AI feedback
-   - Conversation replay
-5. **Interview mode refinements**:
-   - Visible timer with configurable duration
-   - Stage indicator — shows current phase of interview
-   - Hint counter display
-6. **AI personality tuning** — Adjust interviewer style based on user preference
-7. **Profile strength/weakness auto-update** — After each session, AI suggests updates to profile
-8. **PWA support** — Service worker for offline shell, add-to-home-screen
-9. **Mobile responsive** — Full mobile support for practice on the go
+### Deliverables — All Completed
+
+1. ✅ **Auth flow** — Supabase magic link login, `AuthContext`, `useAuth` hook, protected routes, guest routes
+2. ✅ **Onboarding wizard** — Multi-step profile setup (role, experience, focus areas, target companies, weekly goal)
+3. ✅ **Progress dashboard** — Recharts radar chart by topic, streak counter, weak area spotlight, quick-start CTA
+4. ✅ **Session history page** — Past sessions list with AI feedback summaries, per-attempt detail, expandable view
+5. ✅ **Interview room refinements** — Stage indicator (Warm-up → Interview → Feedback), countdown timer, stage-aware UI
+6. ✅ **Warm-up / free-chat mode** — Casual AI conversation before interview, AI greets user by name
+7. ✅ **Question browser page** (`/questions`) — Browse all 150+ questions by topic, filter by difficulty, search by title, launch to practice, category tabs (DSA / Frontend)
+8. ✅ **LLM API test page** (`/llm-test`) — Dev health-check tool: non-streaming ping, streaming test, custom prompt sandbox, env var inspector
+9. ✅ **React Router v6** — Full routing setup with `BrowserRouter`, protected `RequireAuth`, guest `RequireGuest`
+10. ✅ **Dashboard nav links** — Questions, History, API test, Sign out
+
+### Bug Fixes Applied
+- Fixed LLM base URL hardcoded to OpenAI — now reads `VITE_LLM_BASE_URL`
+- Fixed `sessions` table column (`uid` → `user_id`) causing SessionHistory crash
+- Added `cursor-pointer` to all buttons via Tailwind CSS base layer
 
 ---
 
-## Phase 4: Future Enhancements — Post-MVP Roadmap
+## Phase 4: Polish & Production — Next Up
 
-Not planned in detail yet, but potential additions:
+**Goal**: Safe code execution, mobile support, real OAuth, production deploy.
 
-- **Code execution** — Judge0 API or similar for running tests
-- **Multiplayer mock interviews** — Practice with friends
-- **Spaced repetition** — SM-2 algorithm for question scheduling
-- **Export progress** — PDF report of interview readiness
-- **Custom question import** — Add your own questions
-- **LeetCode integration** — Link to actual LC problems
+### Planned Deliverables
+
+1. **Web Worker code sandbox** — Move `Function()` evaluation off main thread; isolated sandbox with timeout kill
+2. **Multi-language editor support** — Python, Java, Go stubs + test runner adapters
+3. **Google OAuth login** — Swap magic link for Google provider in Supabase Auth
+4. **Mobile-responsive layout** — Touch-friendly controls, responsive grid, voice UX on mobile
+5. **Streaks + calendar heatmap** — Visual practice history on dashboard
+6. **Spaced repetition scheduler** — SM-2 algorithm to auto-schedule question reviews
+7. **Session export** — PDF/Markdown report of session with AI feedback
+8. **Groq Whisper STT** — Replace Web Speech API with Groq Whisper for better accuracy + language support
+9. **Production deployment** — Vercel (frontend) + Supabase hosted project (DB + Auth)
+10. **Custom question import** — Add personal questions to question bank

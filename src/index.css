@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@layer base {
+  button,
+  [role="button"],
+  a,
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
+
+  input[type="range"] {
+    cursor: grab;
+  }
+
+  input[disabled],
+  button[disabled],
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
