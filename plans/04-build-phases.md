@@ -98,19 +98,24 @@ Select question via weighted random from top candidates.
 
 ---
 
-## Phase 4: Polish & Production — Next Up
+## Phase 4: Polish & Production — 🚧 In Progress
 
 **Goal**: Safe code execution, mobile support, real OAuth, production deploy.
 
+### Bug Fixes Applied (Phase 4 start)
+
+- ✅ **Clickable question rows** — Clicking anywhere on a row in the Question Browser now navigates directly to `/interview/:slug`; the "Practice →" button became a visual hint only (no nested click needed)
+- ✅ **Wrong question shown in panel** — `useInterview` now eagerly fetches the question by slug on hook mount via `useEffect`, so `QuestionPanel` immediately shows the correct problem title/description/examples instead of defaulting to Two Sum until `startSession` runs
+
 ### Planned Deliverables
 
-1. **Web Worker code sandbox** — Move `Function()` evaluation off main thread; isolated sandbox with timeout kill
-2. **Multi-language editor support** — Python, Java, Go stubs + test runner adapters
-3. **Google OAuth login** — Swap magic link for Google provider in Supabase Auth
-4. **Mobile-responsive layout** — Touch-friendly controls, responsive grid, voice UX on mobile
-5. **Streaks + calendar heatmap** — Visual practice history on dashboard
-6. **Spaced repetition scheduler** — SM-2 algorithm to auto-schedule question reviews
-7. **Session export** — PDF/Markdown report of session with AI feedback
-8. **Groq Whisper STT** — Replace Web Speech API with Groq Whisper for better accuracy + language support
-9. **Production deployment** — Vercel (frontend) + Supabase hosted project (DB + Auth)
-10. **Custom question import** — Add personal questions to question bank
+1. [ ] **Web Worker code sandbox** — Move `Function()` evaluation off main thread; isolated sandbox with timeout kill
+2. [ ] **Multi-language editor support** — Python, Java, Go stubs + test runner adapters
+3. [ ] **Google OAuth login** — Swap magic link for Google provider in Supabase Auth
+4. [ ] **Mobile-responsive layout** — Touch-friendly controls, responsive grid, voice UX on mobile
+5. [ ] **Streaks + calendar heatmap** — Visual practice history on dashboard
+6. [ ] **Spaced repetition scheduler** — SM-2 algorithm to auto-schedule question reviews
+7. [ ] **Session export** — PDF/Markdown report of session with AI feedback
+8. [ ] **Groq Whisper STT** — Replace Web Speech API with Groq Whisper for better accuracy + language support
+9. [ ] **Production deployment** — Vercel (frontend) + Supabase hosted project (DB + Auth)
+10. [ ] **Custom question import** — Add personal questions to question bank

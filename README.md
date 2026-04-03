@@ -44,7 +44,12 @@ Built for one person: a 6-year frontend engineer grinding toward FAANG.
 | Phase 1 — MVP | ✅ Done | Voice + Monaco editor + LLM + Two Sum working locally |
 | Phase 2 — Data Layer | ✅ Done | Supabase schema + 150+ questions + adaptive engine |
 | Phase 3 — Dashboard & Auth | ✅ Done | Auth, onboarding, dashboard, session history, routing |
-| Phase 4 — Polish & Deploy | 🚧 Next | Web Worker sandbox, mobile, real auth, production deploy |
+| Phase 4 — Polish & Deploy | 🚧 In Progress | Web Worker sandbox, mobile, real auth, production deploy |
+
+### Phase 4 — In Progress
+
+- **Fix: clickable question rows** — Clicking anywhere on a row in the Question Browser navigates directly to `/interview/:slug`; no need to hover and click the "Practice →" button
+- **Fix: stale question in panel (Two Sum bug)** — `useInterview` now eagerly fetches the question by slug on mount via `useEffect`, so `QuestionPanel` shows the correct problem immediately instead of defaulting to Two Sum until session start
 
 ### Phase 3 — What Was Built
 
@@ -173,6 +178,8 @@ Total: **150+ questions** across **19 topics**
 
 ## Phase 4 Roadmap
 
+- [x] Clickable question rows in Question Browser
+- [x] Fix stale question panel (always showed Two Sum regardless of selected question)
 - [ ] Web Worker sandbox for safe code execution (no eval in main thread)
 - [ ] Multi-language support in editor (Python, Java, Go)
 - [ ] Google OAuth login (production)

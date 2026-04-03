@@ -210,7 +210,8 @@ export function QuestionBrowserPage() {
                   {filtered.map((q, idx) => (
                     <tr
                       key={q.id}
-                      className="border-b border-gray-800/50 hover:bg-gray-900/60 transition-colors group"
+                      onClick={() => navigate(`/interview/${q.slug}`)}
+                      className="border-b border-gray-800/50 hover:bg-gray-900/60 transition-colors group cursor-pointer"
                     >
                       <td className="px-5 py-3 text-gray-600 tabular-nums">{idx + 1}</td>
                       <td className="px-2 py-3">
@@ -230,12 +231,9 @@ export function QuestionBrowserPage() {
                         {q.source ?? '—'}
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => navigate(`/interview/${q.slug}`)}
-                          className="opacity-0 group-hover:opacity-100 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-all"
-                        >
+                        <span className="opacity-0 group-hover:opacity-100 px-3 py-1 bg-indigo-600 text-white text-xs font-medium rounded-lg transition-all inline-block">
                           Practice →
-                        </button>
+                        </span>
                       </td>
                     </tr>
                   ))}

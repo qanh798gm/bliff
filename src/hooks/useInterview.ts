@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { Message, InterviewStage, Question, TestResult } from '../types'
 import { streamChatCompletion } from '../services/llm'
 import { buildSystemPrompt, parseFeedbackJson, type PromptContext } from '../lib/promptBuilder'
@@ -62,6 +62,17 @@ export function useInterview(slug?: string): UseInterviewReturn {
   // Phase 2: dynamic question from DB (fallback to TWO_SUM while DB not set up)
   const [question, setQuestion] = useState<Question>(TWO_SUM)
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false)
+
+  // Eagerly load the question from slug as soon as the hook mounts so that
+  // QuestionPanel shows the correct problem before the session even starts.
+  useEffect(() => {
+    if (!slug) return
+    setIsLoadingQuestion(true)
+    fetchQuestionBySlug(slug)
+      .then((row) => setQuestion(rowToQuestion(row)))
+      .catch(() => { /* keep TWO_SUM fallback */ })
+      .finally(() => setIsLoadingQuestion(false))
+  }, [slug])
 
   // Phase 2: DB persistence refs
   const dbSessionIdRef = useRef<string | null>(null)

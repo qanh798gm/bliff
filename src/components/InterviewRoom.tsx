@@ -334,11 +334,13 @@ export function InterviewRoom() {
             )}
           </div>
 
-          {/* Code action buttons */}
+          {/* Code action buttons.
+              Run Tests: always enabled when a question is loaded (slug present) or session active.
+              Submit: only enabled once a session is running (not idle), so AI context exists. */}
           <div className="flex-shrink-0 border-t border-gray-800 p-3 flex gap-2">
             <button
               onClick={handleRunCode}
-              disabled={interview.isRunningTests || interview.stage === 'idle'}
+              disabled={interview.isRunningTests || (interview.stage === 'idle' && !slug)}
               className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 text-sm font-medium rounded-lg transition-colors"
             >
               {interview.isRunningTests ? 'Running...' : '▶ Run Tests'}
