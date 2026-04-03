@@ -120,9 +120,10 @@ export function InterviewRoom() {
           {interview.stage === 'idle' ? (
             <button
               onClick={() => void interview.startSession()}
-              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={interview.isLoadingQuestion}
+              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             >
-              Start Interview
+              {interview.isLoadingQuestion ? '⏳ Loading…' : 'Start Interview'}
             </button>
           ) : (
             <>

@@ -1,8 +1,18 @@
 import { useState, useCallback, useRef } from 'react'
 import type { Message, InterviewStage, Question, TestResult } from '../types'
 import { streamChatCompletion } from '../services/llm'
-import { buildSystemPrompt } from '../lib/promptBuilder'
+import { buildSystemPrompt, parseFeedbackJson, type PromptContext } from '../lib/promptBuilder'
 import { runTests, formatResultsForAI } from '../services/codeRunner'
+import { selectNextQuestion } from '../services/questionService'
+import { buildProfileSummary, getTopicStats } from '../services/profileService'
+import {
+  createSession,
+  endSession as dbEndSession,
+  createAttempt,
+  finalizeAttempt,
+  getRecentlyAttemptedQuestionIds,
+} from '../services/sessionService'
+import { rowToQuestion } from '../lib/questionAdapter'
 import { TWO_SUM } from '../data/questions'
 
 // ============================================================
@@ -19,6 +29,7 @@ interface UseInterviewReturn {
   askedClarifying: boolean
   testResults: TestResult[]
   isRunningTests: boolean
+  isLoadingQuestion: boolean
   sendMessage: (text: string) => Promise<void>
   startSession: () => Promise<void>
   submitCode: (code: string) => Promise<void>
@@ -46,8 +57,15 @@ export function useInterview(): UseInterviewReturn {
   const [testResults, setTestResults] = useState<TestResult[]>([])
   const [isRunningTests, setIsRunningTests] = useState(false)
 
-  // Phase 1: single hardcoded question
-  const question = TWO_SUM
+  // Phase 2: dynamic question from DB (fallback to TWO_SUM while DB not set up)
+  const [question, setQuestion] = useState<Question>(TWO_SUM)
+  const [isLoadingQuestion, setIsLoadingQuestion] = useState(false)
+
+  // Phase 2: DB persistence refs
+  const dbSessionIdRef = useRef<string | null>(null)
+  const dbAttemptIdRef = useRef<string | null>(null)
+  const promptCtxRef = useRef<PromptContext>({})
+  const conversationLogRef = useRef<{ role: string; content: string; timestamp: string }[]>([])
 
   // Track stage in a ref so callbacks always see latest value
   const stageRef = useRef<InterviewStage>('idle')
@@ -62,7 +80,7 @@ export function useInterview(): UseInterviewReturn {
 
   const getSystemPrompt = useCallback(
     (currentStage: InterviewStage) =>
-      buildSystemPrompt(question, currentStage, hintsGiven, askedClarifying),
+      buildSystemPrompt(question, currentStage, hintsGiven, askedClarifying, promptCtxRef.current),
     [question, hintsGiven, askedClarifying],
   )
 
@@ -131,16 +149,61 @@ export function useInterview(): UseInterviewReturn {
     [isThinking, messages, appendMessage, getSystemPrompt],
   )
 
-  // Start a new interview session
+  // Start a new interview session — Phase 2: loads DB question + profile context
   const startSession = useCallback(async () => {
     setStageSync('present')
     setHintsGiven(0)
     setAskedClarifying(false)
     setTestResults([])
     setMessages([])
+    conversationLogRef.current = []
     setIsThinking(true)
+    setIsLoadingQuestion(true)
 
-    const systemPrompt = buildSystemPrompt(question, 'present', 0, false)
+    // Phase 2: load profile context for prompts
+    let activeQuestion = question
+    try {
+      const [profileSummary, topicStats, recentIds] = await Promise.all([
+        buildProfileSummary().catch(() => ''),
+        getTopicStats().catch(() => []),
+        getRecentlyAttemptedQuestionIds(5).catch(() => []),
+      ])
+
+      // Build prompt context from profile data
+      promptCtxRef.current = { profileSummary }
+
+      // Try to select adaptive question from DB
+      const row = await selectNextQuestion(recentIds).catch(() => null)
+      if (row) {
+        const q = rowToQuestion(row)
+        // Enrich topic mastery context
+        const stat = topicStats.find(s => s.topic_id === row.topic_id)
+        if (stat) {
+          promptCtxRef.current.topicMastery = {
+            topicName: stat.topic?.name ?? row.topic_id,
+            masteryLevel: stat.mastery_level,
+            totalAttempts: stat.total_attempts,
+            avgScore: stat.avg_score,
+          }
+        }
+        setQuestion(q)
+        activeQuestion = q
+      }
+
+      // Create DB session + attempt
+      const dbSession = await createSession('interview').catch(() => null)
+      if (dbSession) {
+        dbSessionIdRef.current = dbSession.id
+        const attempt = await createAttempt(dbSession.id, activeQuestion.id).catch(() => null)
+        if (attempt) dbAttemptIdRef.current = attempt.id
+      }
+    } catch (err) {
+      console.warn('[useInterview] Phase 2 init error (non-fatal):', err)
+    } finally {
+      setIsLoadingQuestion(false)
+    }
+
+    const systemPrompt = buildSystemPrompt(activeQuestion, 'present', 0, false, promptCtxRef.current)
     const kickoffMsg = makeMessage('user', 'I am ready to start the interview. Please present the problem.')
     setMessages([kickoffMsg])
 
@@ -220,13 +283,38 @@ export function useInterview(): UseInterviewReturn {
     await sendMessage(`I'm stuck. Can I get hint ${hintsGiven + 1}?`)
   }, [hintsGiven, question.hints.length, sendMessage])
 
-  // End session and get final feedback
+  // End session and get final feedback + persist to DB
   const endSession = useCallback(async () => {
     setStageSync('feedback')
     await sendMessage(
       'The interview session is now complete. Please give me your full structured feedback on my performance.',
     )
-  }, [sendMessage])
+
+    // Phase 2: finalize DB attempt after feedback is delivered
+    // We do this asynchronously so it doesn't block UI
+    const attemptId = dbAttemptIdRef.current
+    const sessionId = dbSessionIdRef.current
+    if (attemptId) {
+      // Grab last AI message which should contain the feedback JSON
+      const lastAI = [...messages].reverse().find(m => m.role === 'assistant')
+      const feedbackRaw = lastAI ? parseFeedbackJson(lastAI.content) : null
+      const aiScore = feedbackRaw
+        ? Math.round((feedbackRaw.correctness + feedbackRaw.efficiency + feedbackRaw.communication) / 3)
+        : undefined
+
+      finalizeAttempt(attemptId, {
+        status: 'solved',
+        hintsUsed: hintsGiven,
+        askedClarifying,
+        aiScore,
+        aiFeedback: feedbackRaw ?? undefined,
+        conversationLog: conversationLogRef.current as never,
+      }).catch(err => console.warn('[useInterview] finalizeAttempt error:', err))
+    }
+    if (sessionId) {
+      dbEndSession(sessionId).catch(err => console.warn('[useInterview] endSession DB error:', err))
+    }
+  }, [sendMessage, messages, hintsGiven, askedClarifying])
 
   // Reset everything
   const resetSession = useCallback(() => {
@@ -236,6 +324,11 @@ export function useInterview(): UseInterviewReturn {
     setAskedClarifying(false)
     setTestResults([])
     setIsThinking(false)
+    setQuestion(TWO_SUM)
+    dbSessionIdRef.current = null
+    dbAttemptIdRef.current = null
+    promptCtxRef.current = {}
+    conversationLogRef.current = []
   }, [])
 
   return {
@@ -247,6 +340,7 @@ export function useInterview(): UseInterviewReturn {
     askedClarifying,
     testResults,
     isRunningTests,
+    isLoadingQuestion,
     sendMessage,
     startSession,
     submitCode,

@@ -2,15 +2,27 @@ import type { Question, InterviewStage } from '../types'
 
 // ============================================================
 // Prompt Builder — assembles the dynamic system prompt
-// Phase 1: Static persona + question injection
-// Phase 2+: Will inject user profile + topic stats from Supabase
+// Phase 2: Injects real user profile + topic mastery context
 // ============================================================
+
+export interface PromptContext {
+  /** Free-text summary from profileService.buildProfileSummary() */
+  profileSummary?: string
+  /** Optional mastery context for the current topic */
+  topicMastery?: {
+    topicName: string
+    masteryLevel: string
+    totalAttempts: number
+    avgScore: number
+  }
+}
 
 export function buildSystemPrompt(
   question: Question,
   stage: InterviewStage,
   hintsGiven: number,
   askedClarifying: boolean,
+  ctx?: PromptContext
 ): string {
   const roleSection = `You are Bliff, a senior software engineer conducting a technical interview at a top-tier tech company (think Google, Meta, Amazon). You are friendly, encouraging, but rigorous and honest.
 
@@ -22,6 +34,8 @@ CORE RULES — follow these strictly:
 - Keep responses concise — this is a real-time voice conversation, not a written essay
 - When the candidate speaks Vietnamese, respond in Vietnamese. Otherwise respond in English.
 - Be encouraging but never dishonest about weaknesses`
+
+  const profileSection = buildProfileSection(ctx)
 
   const questionSection = `
 === CURRENT PROBLEM ===
@@ -53,7 +67,34 @@ Space Complexity: ${question.expectedSpaceComplexity}`
 
   const stageInstructions = buildStageInstructions(stage, askedClarifying)
 
-  return `${roleSection}\n${questionSection}\n\n${stageInstructions}`
+  return `${roleSection}${profileSection}\n${questionSection}\n\n${stageInstructions}`
+}
+
+function buildProfileSection(ctx?: PromptContext): string {
+  if (!ctx?.profileSummary && !ctx?.topicMastery) return ''
+
+  const lines: string[] = ['\n\n=== CANDIDATE PROFILE ===']
+
+  if (ctx.profileSummary) {
+    lines.push(ctx.profileSummary)
+  }
+
+  if (ctx.topicMastery) {
+    const { topicName, masteryLevel, totalAttempts, avgScore } = ctx.topicMastery
+    lines.push(
+      `\nCurrent topic (${topicName}) mastery: ${masteryLevel}`,
+      `  Prior attempts on this topic: ${totalAttempts}`,
+      `  Average score: ${avgScore > 0 ? avgScore.toFixed(1) + '/10' : 'N/A'}`,
+    )
+
+    if (masteryLevel === 'beginner') {
+      lines.push('  → Be extra encouraging. Keep hints accessible. Guide more.')
+    } else if (masteryLevel === 'mastered') {
+      lines.push('  → Hold them to a higher standard. Expect optimal solutions.')
+    }
+  }
+
+  return lines.join('\n')
 }
 
 function buildStageInstructions(stage: InterviewStage, askedClarifying: boolean): string {
@@ -99,9 +140,39 @@ Cover these areas:
 4. Communication (did they think out loud? ask clarifying questions?)
 5. What to improve for next time
 
-Be specific — reference actual things they said or did. End on an encouraging note.`
+Be specific — reference actual things they said or did. End on an encouraging note.
+
+After your verbal feedback, output a JSON block (for the app to parse) in this exact format:
+<feedback_json>
+{
+  "correctness": <1-10>,
+  "efficiency": <1-10>,
+  "communication": <1-10>,
+  "summary": "<one sentence summary>",
+  "strengths": ["<strength1>", "<strength2>"],
+  "improvements": ["<improvement1>", "<improvement2>"]
+}
+</feedback_json>`
 
     default:
       return ''
+  }
+}
+
+// ── Parse AI feedback JSON from the feedback stage response ──
+export function parseFeedbackJson(text: string): {
+  correctness: number
+  efficiency: number
+  communication: number
+  summary: string
+  strengths: string[]
+  improvements: string[]
+} | null {
+  const match = text.match(/<feedback_json>\s*([\s\S]*?)\s*<\/feedback_json>/)
+  if (!match) return null
+  try {
+    return JSON.parse(match[1])
+  } catch {
+    return null
   }
 }
