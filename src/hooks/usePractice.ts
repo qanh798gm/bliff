@@ -6,7 +6,7 @@ import { rowToQuestion } from '../lib/questionAdapter'
 import { runTests } from '../services/codeRunner'
 import { streamChatCompletion } from '../services/llm'
 import { buildSystemPrompt } from '../lib/promptBuilder'
-import { buildProfileSummary } from '../services/profileService'
+import { buildProfileSummary, upsertPracticeStats } from '../services/profileService'
 import {
   fetchSolutionsForQuestion,
   saveSolution,
@@ -155,6 +155,22 @@ export function usePractice(slug?: string): UsePracticeReturn {
     try {
       const results = await runTests(code, question.testCases, question.entryPoint)
       setTestResults(results)
+
+      // Track practice stats: increment attempts; mark solved if all basic+edge tests pass
+      // Correlate result ids with testCase tiers since TestResult has no tier field
+      if (question.topic) {
+        const tierById = new Map(
+          question.testCases.map((tc) => [tc.id, tc.tier ?? 'basic'])
+        )
+        const basicEdge = results.filter((r) => {
+          const tier = tierById.get(r.id)
+          return tier === 'basic' || tier === 'edge'
+        })
+        const solved = basicEdge.length > 0 && basicEdge.every((r) => r.passed)
+        upsertPracticeStats(question.topic, solved).catch(() => {
+          // best-effort — don't block UX on stat tracking failures
+        })
+      }
     } catch (err) {
       console.error('[usePractice] runTests error:', err)
     } finally {

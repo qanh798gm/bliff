@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchTopics, fetchQuestionsByTopic } from '../services/questionService'
+import { fetchSolvedQuestionIds } from '../services/solutionService'
 import type { TopicRow, QuestionRow, Difficulty } from '../types/database'
 
 // ============================================================
@@ -35,13 +36,14 @@ export function QuestionBrowserPage() {
   const [isLoadingTopics, setIsLoadingTopics] = useState(true)
   const [isLoadingQ, setIsLoadingQ] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [solvedIds, setSolvedIds] = useState<Set<string>>(new Set())
 
   // Filters
   const [search, setSearch] = useState('')
   const [diffFilter, setDiffFilter] = useState<Difficulty | 'all'>('all')
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'dsa' | 'frontend'>('all')
 
-  // Load topics once
+  // Load topics once + load solved question IDs
   useEffect(() => {
     fetchTopics()
       .then((rows) => {
@@ -50,6 +52,10 @@ export function QuestionBrowserPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setIsLoadingTopics(false))
+
+    fetchSolvedQuestionIds()
+      .then(setSolvedIds)
+      .catch(() => {}) // best-effort
   }, [])
 
   // Load questions when active topic changes
@@ -215,14 +221,24 @@ export function QuestionBrowserPage() {
                     >
                       <td className="px-5 py-3 text-gray-600 tabular-nums">{idx + 1}</td>
                       <td className="px-2 py-3">
-                        <span className="text-white font-medium group-hover:text-indigo-300 transition-colors">
-                          {q.title}
-                        </span>
-                        {q.tags && q.tags.length > 0 && (
-                          <span className="ml-2 text-gray-600 text-xs">
-                            {q.tags.slice(0, 2).join(', ')}
+                        <div className="flex items-center gap-2">
+                          {solvedIds.has(q.id) && (
+                            <span
+                              title="You have a saved solution"
+                              className="flex-shrink-0 w-4 h-4 rounded-full bg-green-500/20 text-green-400 text-[9px] flex items-center justify-center font-bold"
+                            >
+                              ✓
+                            </span>
+                          )}
+                          <span className="text-white font-medium group-hover:text-indigo-300 transition-colors">
+                            {q.title}
                           </span>
-                        )}
+                          {q.tags && q.tags.length > 0 && (
+                            <span className="text-gray-600 text-xs">
+                              {q.tags.slice(0, 2).join(', ')}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-2 py-3">
                         <DifficultyBadge difficulty={q.difficulty} />

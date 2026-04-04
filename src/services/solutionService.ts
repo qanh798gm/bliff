@@ -27,6 +27,17 @@ function rowToSolution(row: UserSolutionRow): UserSolution {
   }
 }
 
+// ── Fetch all question IDs that have at least one saved solution ──
+// Used by QuestionBrowser to show solved indicators efficiently.
+export async function fetchSolvedQuestionIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('user_solutions')
+    .select('question_id')
+
+  if (error) throw error
+  return new Set((data as { question_id: string }[]).map((r) => r.question_id))
+}
+
 // ── Fetch all solutions for a question (current user) ────────
 
 export async function fetchSolutionsForQuestion(

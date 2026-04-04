@@ -1,6 +1,43 @@
 import { supabase } from '../lib/supabase'
 import type { UserProfileRow, UserTopicStatsRow, TopicRow, TopicStatRow } from '../types/database'
 
+// ── Upsert practice stats for a topic ───────────────────────
+// Called by usePractice after each "Run Tests" execution.
+// Increments practice_attempts by 1; if `solved` is true also increments practice_solved.
+export async function upsertPracticeStats(
+  topicId: string,
+  solved: boolean
+): Promise<void> {
+  // Try to fetch the existing row first
+  const { data: existing } = await supabase
+    .from('user_topic_stats')
+    .select('id, practice_attempts, practice_solved')
+    .eq('topic_id', topicId)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('user_topic_stats')
+      .update({
+        practice_attempts: existing.practice_attempts + 1,
+        practice_solved: solved ? existing.practice_solved + 1 : existing.practice_solved,
+        last_attempted_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('user_topic_stats')
+      .insert({
+        topic_id: topicId,
+        practice_attempts: 1,
+        practice_solved: solved ? 1 : 0,
+        last_attempted_at: new Date().toISOString(),
+      })
+    if (error) throw error
+  }
+}
+
 // ── Get the single user profile ─────────────────────────────
 export async function getProfile(): Promise<UserProfileRow | null> {
   const { data, error } = await supabase
