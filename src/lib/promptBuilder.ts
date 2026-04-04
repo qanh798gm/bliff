@@ -1,21 +1,13 @@
-import type { Question, InterviewStage } from '../types'
+import type { Question, InterviewStage, PromptContext } from '../types'
 
 // ============================================================
 // Prompt Builder — assembles the dynamic system prompt
 // Phase 2: Injects real user profile + topic mastery context
+// Phase 4: Injects previousSolutions for multi-solution tracking
 // ============================================================
 
-export interface PromptContext {
-  /** Free-text summary from profileService.buildProfileSummary() */
-  profileSummary?: string
-  /** Optional mastery context for the current topic */
-  topicMastery?: {
-    topicName: string
-    masteryLevel: string
-    totalAttempts: number
-    avgScore: number
-  }
-}
+// Re-export so existing importers of PromptContext from this module still work
+export type { PromptContext }
 
 export function buildSystemPrompt(
   question: Question,
@@ -71,7 +63,7 @@ Space Complexity: ${question.expectedSpaceComplexity}`
 }
 
 function buildProfileSection(ctx?: PromptContext): string {
-  if (!ctx?.profileSummary && !ctx?.topicMastery) return ''
+  if (!ctx?.profileSummary && !ctx?.topicMastery && !ctx?.previousSolutions?.length) return ''
 
   const lines: string[] = ['\n\n=== CANDIDATE PROFILE ===']
 
@@ -92,6 +84,30 @@ function buildProfileSection(ctx?: PromptContext): string {
     } else if (masteryLevel === 'mastered') {
       lines.push('  → Hold them to a higher standard. Expect optimal solutions.')
     }
+  }
+
+  if (ctx.previousSolutions && ctx.previousSolutions.length > 0) {
+    lines.push('\n=== CANDIDATE\'S PRIOR SOLUTIONS FOR THIS QUESTION ===')
+    lines.push(
+      'IMPORTANT: The candidate has already solved this problem before.',
+      'Do NOT ask them to start from scratch or explain basic approaches they have already demonstrated.',
+      'Build on what they know. Challenge them to go deeper or optimize further.',
+    )
+    ctx.previousSolutions.forEach((sol) => {
+      const complexity = [
+        sol.timeComplexity ? `Time: ${sol.timeComplexity}` : null,
+        sol.spaceComplexity ? `Space: ${sol.spaceComplexity}` : null,
+      ].filter(Boolean).join(', ')
+      lines.push(`\n  Solution #${sol.rank} — "${sol.label}"${complexity ? ` (${complexity})` : ''}`)
+      if (sol.aiNotes) lines.push(`  AI notes: ${sol.aiNotes}`)
+      if (sol.code) {
+        lines.push(`  Code:\n\`\`\`javascript\n${sol.code}\n\`\`\``)
+      }
+    })
+    lines.push(
+      '\nSuggested conversation approach: Ask about trade-offs between their solutions,',
+      'challenge them to optimize the best one, or explore alternative approaches they haven\'t tried.',
+    )
   }
 
   return lines.join('\n')

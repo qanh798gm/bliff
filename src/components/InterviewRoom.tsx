@@ -35,12 +35,10 @@ function useTimer(running: boolean) {
 }
 
 // ============================================================
-// InterviewRoom — main interview UI
-// Layout: left panel (question) | center (chat+voice) | right (code)
+// InterviewRoom — interview mode UI
+// Layout: left (problem desc + AI chat + voice) |
+//         right (editor top + test results bottom)
 // ============================================================
-
-type ActiveTab = 'question' | 'chat'
-type RightTab = 'editor' | 'tests'
 
 export function InterviewRoom() {
   const { slug } = useParams<{ slug?: string }>()
@@ -48,14 +46,12 @@ export function InterviewRoom() {
   const navigate = useNavigate()
   const [code, setCode] = useState(interview.question.functionSignature)
   const [textInput, setTextInput] = useState('')
+  const [language, setLanguage] = useState<VoiceLanguage>('en-US')
 
   // Reset editor to the fetched question's function signature whenever the question changes
   useEffect(() => {
     setCode(interview.question.functionSignature)
   }, [interview.question.functionSignature])
-  const [activeLeftTab, setActiveLeftTab] = useState<ActiveTab>('question')
-  const [activeRightTab, setActiveRightTab] = useState<RightTab>('editor')
-  const [language, setLanguage] = useState<VoiceLanguage>('en-US')
 
   const timerRunning = interview.stage !== 'idle' && interview.stage !== 'feedback'
   const { formatted: timerFormatted, reset: resetTimer } = useTimer(timerRunning)
@@ -103,12 +99,10 @@ export function InterviewRoom() {
   }
 
   const handleRunCode = useCallback(() => {
-    setActiveRightTab('tests')
     void interview.runCode(code)
   }, [code, interview])
 
   const handleSubmit = useCallback(() => {
-    setActiveRightTab('tests')
     void interview.submitCode(code)
   }, [code, interview])
 
@@ -132,6 +126,9 @@ export function InterviewRoom() {
     feedback: 'text-purple-400',
   }
 
+  const passCount = interview.testResults.filter((r) => r.passed).length
+  const totalCount = interview.testResults.length
+
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
       {/* Top bar */}
@@ -144,6 +141,12 @@ export function InterviewRoom() {
             bli<span className="text-white">ff</span>
           </button>
           <span className="text-xs text-gray-500">Interview</span>
+          {slug && interview.question.title && (
+            <>
+              <span className="text-gray-700">/</span>
+              <span className="text-sm text-gray-300">{interview.question.title}</span>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
@@ -168,6 +171,16 @@ export function InterviewRoom() {
 
         {/* Session controls */}
         <div className="flex items-center gap-2">
+          {/* Practice mode link */}
+          {slug && (
+            <button
+              onClick={() => navigate(`/practice/${slug}`)}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs font-medium rounded-lg transition-colors border border-gray-700"
+            >
+              ▶ Practice Mode
+            </button>
+          )}
+
           {interview.stage === 'idle' ? (
             <button
               onClick={() => void interview.startWarmup()}
@@ -219,139 +232,109 @@ export function InterviewRoom() {
         </div>
       </header>
 
-      {/* Main 3-column layout */}
+      {/* Main 2-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT PANEL — Question description */}
-        <div className="w-80 flex-shrink-0 flex flex-col border-r border-gray-800">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-800">
-            {(['question', 'chat'] as ActiveTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveLeftTab(tab)}
-                className={`flex-1 py-2 text-xs font-medium capitalize transition-colors ${
-                  activeLeftTab === tab
-                    ? 'text-indigo-400 border-b-2 border-indigo-500'
-                    : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {tab === 'chat' ? 'Transcript' : 'Problem'}
-              </button>
-            ))}
+        {/* ── LEFT PANEL — Problem + AI Chat + Voice ─────── */}
+        <div className="w-80 flex-shrink-0 flex flex-col border-r border-gray-800 overflow-hidden">
+          {/* Problem description (scrollable, upper portion) */}
+          <div className="flex-1 overflow-y-auto p-4 border-b border-gray-800/60 min-h-0">
+            <QuestionPanel question={interview.question} />
           </div>
-          <div className="flex-1 overflow-hidden p-4">
-            {activeLeftTab === 'question' ? (
-              <QuestionPanel question={interview.question} />
-            ) : (
+
+          {/* AI Chat transcript (always visible below problem) */}
+          <div className="flex-shrink-0 flex flex-col" style={{ height: '45%' }}>
+            <div className="px-3 py-1.5 border-b border-gray-800 bg-gray-900/50">
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                AI Conversation
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 min-h-0">
               <ChatTranscript
                 messages={interview.messages}
                 isThinking={interview.isThinking}
               />
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* CENTER PANEL — Voice + text input */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Chat transcript (center main area) */}
-          <div className="flex-1 overflow-hidden p-4">
-            <ChatTranscript
-              messages={interview.messages}
-              isThinking={interview.isThinking}
-            />
-          </div>
-
-          {/* Voice + text input bar */}
-          <div className="flex-shrink-0 border-t border-gray-800 p-4 bg-gray-900">
-            <VoiceControls
-              status={voice.status}
-              isSupported={voice.isSupported}
-              isSpeaking={voice.isSpeaking}
-              language={language}
-              interimTranscript={voice.interimTranscript}
-              onToggleListen={voice.toggleListening}
-              onStopSpeaking={voice.stopSpeaking}
-              onLanguageChange={setLanguage}
-            />
-
-            {/* Text input fallback */}
-            <div className="flex gap-2 mt-3">
+            {/* Text input */}
+            <div className="flex gap-2 p-2 border-t border-gray-800">
               <textarea
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
-                rows={2}
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="Type a message… (Enter to send)"
+                rows={1}
+                disabled={interview.stage === 'idle'}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-40"
               />
               <button
                 onClick={handleSendText}
-                disabled={!textInput.trim() || interview.isThinking}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors self-end"
+                disabled={!textInput.trim() || interview.isThinking || interview.stage === 'idle'}
+                className="px-2 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors self-end"
               >
-                Send
+                ↑
               </button>
+            </div>
+
+            {/* Voice controls */}
+            <div className="px-2 pb-2 border-t border-gray-800 pt-1">
+              <VoiceControls
+                status={voice.status}
+                isSupported={voice.isSupported}
+                isSpeaking={voice.isSpeaking}
+                language={language}
+                interimTranscript={voice.interimTranscript}
+                onToggleListen={voice.toggleListening}
+                onStopSpeaking={voice.stopSpeaking}
+                onLanguageChange={setLanguage}
+              />
             </div>
           </div>
         </div>
 
-        {/* RIGHT PANEL — Code editor + test results */}
-        <div className="w-[480px] flex-shrink-0 flex flex-col border-l border-gray-800">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-800">
-            {(['editor', 'tests'] as RightTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveRightTab(tab)}
-                className={`flex-1 py-2 text-xs font-medium capitalize transition-colors ${
-                  activeRightTab === tab
-                    ? 'text-indigo-400 border-b-2 border-indigo-500'
-                    : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {tab === 'tests'
-                  ? `Tests ${interview.testResults.length > 0 ? `(${interview.testResults.filter((r) => r.passed).length}/${interview.testResults.length})` : ''}`
-                  : 'Editor'}
-              </button>
-            ))}
+        {/* ── RIGHT PANEL — Editor (top) + Tests (bottom) ── */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Code editor (upper flex-1) */}
+          <div className="flex-1 overflow-hidden p-3 min-h-0">
+            <CodeEditor
+              value={code}
+              onChange={setCode}
+              height="100%"
+            />
           </div>
 
-          {/* Editor */}
-          <div className="flex-1 overflow-hidden p-3 flex flex-col gap-3">
-            {activeRightTab === 'editor' ? (
-              <CodeEditor
-                value={code}
-                onChange={setCode}
-                height="calc(100vh - 200px)"
-              />
-            ) : (
-              <div className="overflow-y-auto flex-1">
-                <TestResultsPanel
-                  results={interview.testResults}
-                  isRunning={interview.isRunningTests}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Code action buttons.
-              Run Tests: always enabled when a question is loaded (slug present) or session active.
-              Submit: only enabled once a session is running (not idle), so AI context exists. */}
-          <div className="flex-shrink-0 border-t border-gray-800 p-3 flex gap-2">
+          {/* Action bar between editor and tests */}
+          <div className="flex items-center gap-2 px-3 py-2 border-t border-b border-gray-800 bg-gray-900/50 flex-shrink-0">
             <button
               onClick={handleRunCode}
-              disabled={interview.isRunningTests || (interview.stage === 'idle' && !slug)}
-              className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 text-sm font-medium rounded-lg transition-colors"
+              disabled={interview.isRunningTests || interview.stage === 'idle'}
+              className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 text-sm font-medium rounded-lg transition-colors"
             >
-              {interview.isRunningTests ? 'Running...' : '▶ Run Tests'}
+              {interview.isRunningTests ? 'Running…' : '▶ Run Tests'}
             </button>
             <button
               onClick={handleSubmit}
               disabled={interview.isRunningTests || interview.stage === 'idle'}
-              className="flex-1 py-2 bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
             >
               ✓ Submit
             </button>
+
+            {/* Test results summary */}
+            {totalCount > 0 && (
+              <span className={`ml-auto text-xs font-medium ${
+                passCount === totalCount ? 'text-green-400' : 'text-yellow-400'
+              }`}>
+                {passCount}/{totalCount} tests passed
+              </span>
+            )}
+          </div>
+
+          {/* Test results panel (lower fixed height) */}
+          <div className="flex-shrink-0 overflow-y-auto" style={{ minHeight: '140px', maxHeight: '38%' }}>
+            <TestResultsPanel
+              results={interview.testResults}
+              isRunning={interview.isRunningTests}
+            />
           </div>
         </div>
       </div>

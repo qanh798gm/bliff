@@ -1,4 +1,11 @@
 # Bliff — Phase 4 Feature Plan
+
+> **CODING RULE — avoid stream truncation errors:**
+> When writing large SQL migration files, write **ONE file per `write_to_file` call**.
+> Never call multiple `write_to_file` tools in the same response turn — the second call
+> always fails with "missing nativeArgs" due to response stream truncation.
+> Pattern: write one file → wait for confirmation → write the next file.
+
 ## Practice Mode, Multi-Solution Tracking, Layout Redesign, Rich Test Cases
 
 ---

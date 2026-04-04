@@ -10,6 +10,8 @@ export function rowToQuestion(row: QuestionRow): Question {
     description: tc.description ?? `Test ${i + 1}`,
     input: tc.input as Record<string, unknown>,
     expected: tc.expected,
+    tier: tc.tier,
+    orderIndependent: tc.orderIndependent,
   }))
 
   return {

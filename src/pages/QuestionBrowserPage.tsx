@@ -203,14 +203,14 @@ export function QuestionBrowserPage() {
                     <th className="text-left px-2 py-2 font-medium">Title</th>
                     <th className="text-left px-2 py-2 font-medium w-24">Difficulty</th>
                     <th className="text-left px-2 py-2 font-medium w-24">Source</th>
-                    <th className="px-5 py-2 w-28"></th>
+                    <th className="px-5 py-2 w-36"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((q, idx) => (
                     <tr
                       key={q.id}
-                      onClick={() => navigate(`/interview/${q.slug}`)}
+                      onClick={() => navigate(`/practice/${q.slug}`)}
                       className="border-b border-gray-800/50 hover:bg-gray-900/60 transition-colors group cursor-pointer"
                     >
                       <td className="px-5 py-3 text-gray-600 tabular-nums">{idx + 1}</td>
@@ -231,9 +231,24 @@ export function QuestionBrowserPage() {
                         {q.source ?? '—'}
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <span className="opacity-0 group-hover:opacity-100 px-3 py-1 bg-indigo-600 text-white text-xs font-medium rounded-lg transition-all inline-block">
-                          Practice →
-                        </span>
+                        {/* Stop propagation so individual buttons don't double-fire the row click */}
+                        <div
+                          className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-all"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => navigate(`/practice/${q.slug}`)}
+                            className="px-2.5 py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-medium rounded-lg transition-colors"
+                          >
+                            ▶ Practice
+                          </button>
+                          <button
+                            onClick={() => navigate(`/interview/${q.slug}`)}
+                            className="px-2.5 py-1 bg-indigo-700/60 hover:bg-indigo-600 text-indigo-200 text-xs font-medium rounded-lg transition-colors"
+                          >
+                            🎙 Interview
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

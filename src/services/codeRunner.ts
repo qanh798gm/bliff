@@ -73,7 +73,7 @@ function runSingleTest(
           durationMs,
         })
       } else {
-        const passed = deepEqual(actual, tc.expected)
+        const passed = deepEqual(actual, tc.expected, tc.orderIndependent ?? false)
         resolve({
           id: tc.id,
           passed,
@@ -86,10 +86,12 @@ function runSingleTest(
       }
     }
 
-    worker.onerror = (e) => {
+    worker.onerror = (e: ErrorEvent) => {
       clearTimeout(timeout)
       worker.terminate()
       URL.revokeObjectURL(workerUrl)
+      // e.message is often "Script error." — prefer e.error.message when available
+      const errorMsg = (e.error as Error)?.message ?? e.message ?? 'Worker error'
       resolve({
         id: tc.id,
         passed: false,
@@ -97,7 +99,7 @@ function runSingleTest(
         input: tc.input,
         expected: tc.expected,
         actual: undefined,
-        error: e.message,
+        error: errorMsg,
         durationMs: performance.now() - start,
       })
     }
@@ -126,17 +128,23 @@ self.dispatchEvent(new MessageEvent('message'));
 }
 
 // Deep equality check for test results (handles arrays, objects, primitives)
-function deepEqual(a: unknown, b: unknown): boolean {
+// Arrays are compared element-by-element in order (no sorting).
+// For problems where the expected result is order-independent (e.g. Two Sum indices),
+// mark the test case with `orderIndependent: true` in the seed data — handled below.
+function deepEqual(a: unknown, b: unknown, orderIndependent = false): boolean {
   if (a === b) return true
   if (a === null || b === null) return a === b
   if (typeof a !== typeof b) return false
 
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false
-    // For Two Sum style problems, sort both arrays before comparing
-    const sortedA = [...a].sort((x, y) => Number(x) - Number(y))
-    const sortedB = [...b].sort((x, y) => Number(x) - Number(y))
-    return sortedA.every((val, i) => deepEqual(val, sortedB[i]))
+    if (orderIndependent) {
+      // Sort numerically for index-pair problems (Two Sum, etc.)
+      const sortedA = [...a].sort((x, y) => Number(x) - Number(y))
+      const sortedB = [...b].sort((x, y) => Number(x) - Number(y))
+      return sortedA.every((val, i) => deepEqual(val, sortedB[i]))
+    }
+    return a.every((val, i) => deepEqual(val, b[i]))
   }
 
   if (typeof a === 'object' && typeof b === 'object') {

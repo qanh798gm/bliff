@@ -6,6 +6,7 @@ import { OnboardingPage } from './pages/OnboardingPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { SessionHistoryPage } from './pages/SessionHistoryPage'
 import { QuestionBrowserPage } from './pages/QuestionBrowserPage'
+import { PracticePage } from './pages/PracticePage'
 import { LlmTestPage } from './pages/LlmTestPage'
 import { InterviewRoom } from './components/InterviewRoom'
 
@@ -62,6 +63,11 @@ function KeyedInterviewRoom() {
   return <InterviewRoom key={slug ?? '__no_slug__'} />
 }
 
+function KeyedPracticePage() {
+  const { slug } = useParams<{ slug?: string }>()
+  return <PracticePage key={slug ?? '__no_slug__'} />
+}
+
 // ============================================================
 // App routes
 // ============================================================
@@ -111,6 +117,14 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <KeyedInterviewRoom />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/practice/:slug"
+        element={
+          <RequireAuth>
+            <KeyedPracticePage />
           </RequireAuth>
         }
       />

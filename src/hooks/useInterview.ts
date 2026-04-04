@@ -12,6 +12,7 @@ import {
   finalizeAttempt,
   getRecentlyAttemptedQuestionIds,
 } from '../services/sessionService'
+import { fetchSolutionsForPrompt } from '../services/solutionService'
 import { rowToQuestion } from '../lib/questionAdapter'
 import { TWO_SUM } from '../data/questions'
 
@@ -201,6 +202,11 @@ export function useInterview(slug?: string): UseInterviewReturn {
             totalAttempts: stat.total_attempts,
             avgScore: stat.avg_score,
           }
+        }
+        // Phase 4: inject previous solutions (without code — no spoilers in interview mode)
+        const previousSolutions = await fetchSolutionsForPrompt(row.id, false).catch(() => [])
+        if (previousSolutions.length > 0) {
+          promptCtxRef.current.previousSolutions = previousSolutions
         }
         setQuestion(q)
         activeQuestion = q

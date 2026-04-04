@@ -26,10 +26,14 @@ export interface QuestionExample {
   explanation?: string
 }
 
+export type TestCaseTier = 'basic' | 'edge' | 'corner' | 'performance'
+
 export interface TestCaseRow {
   input: Record<string, unknown>
   expected: unknown
   description?: string
+  tier?: TestCaseTier           // basic | edge | corner | performance
+  orderIndependent?: boolean    // true for index-pair problems (Two Sum etc.)
 }
 
 export interface QuestionRow {
@@ -99,7 +103,34 @@ export interface UserTopicStatsRow {
   last_attempted_at: string | null
   mastery_level: MasteryLevel
   weight: number
+  practice_attempts: number   // practice-mode runs (no mock interview required)
+  practice_solved: number     // practice runs where all basic+edge tests passed
 }
+
+// ---- user_solutions — ranked solutions per user per question ----
+export interface UserSolutionRow {
+  id: string
+  user_id: string
+  question_id: string
+  attempt_id: string | null    // linked to interview session attempt if applicable
+  label: string                // "Brute Force", "Hash Map", "Optimized", "Alternative"
+  rank: number                 // 1 = first saved, 2 = improved, ...
+  code: string
+  language: string             // "javascript", "python", etc.
+  time_complexity: string | null
+  space_complexity: string | null
+  ai_notes: string | null      // AI commentary on this specific solution
+  is_best: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type SolutionLabel =
+  | 'Brute Force'
+  | 'Better'
+  | 'Optimal'
+  | 'Alternative'
+  | string   // free-form custom label
 
 export interface SessionRow {
   id: string
@@ -183,6 +214,11 @@ export interface Database {
         Row: AttemptRow
         Insert: Omit<AttemptRow, 'id' | 'created_at'> & { id?: string }
         Update: Partial<Omit<AttemptRow, 'id' | 'created_at'>>
+      }
+      user_solutions: {
+        Row: UserSolutionRow
+        Insert: Omit<UserSolutionRow, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+        Update: Partial<Omit<UserSolutionRow, 'id' | 'created_at' | 'updated_at'>>
       }
     }
     Views: Record<string, never>
