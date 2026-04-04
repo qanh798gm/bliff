@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { Message, InterviewStage, Question, TestResult } from '../types'
 import { streamChatCompletion } from '../services/llm'
-import { buildSystemPrompt, parseFeedbackJson, type PromptContext } from '../lib/promptBuilder'
+import { buildSystemPrompt, parseFeedbackJson, parseMemoryJson, readAndClearWarmupHandoff, buildWarmupContextBlock, type PromptContext } from '../lib/promptBuilder'
 import { runTests, formatResultsForAI } from '../services/codeRunner'
 import { selectNextQuestion, fetchQuestionBySlug } from '../services/questionService'
 import { buildProfileSummary, getTopicStats } from '../services/profileService'
@@ -13,8 +13,17 @@ import {
   getRecentlyAttemptedQuestionIds,
 } from '../services/sessionService'
 import { fetchSolutionsForPrompt } from '../services/solutionService'
+import {
+  loadSessionMemory,
+  upsertMemories,
+  expireOldSummaries,
+  saveSessionContext,
+} from '../services/memoryService'
 import { rowToQuestion } from '../lib/questionAdapter'
 import { TWO_SUM } from '../data/questions'
+
+// Max live messages before older ones are summarized into a rolling context note
+const MAX_LIVE_MESSAGES = 20
 
 // ============================================================
 // useInterview — interview state machine
@@ -80,6 +89,8 @@ export function useInterview(slug?: string): UseInterviewReturn {
   const dbAttemptIdRef = useRef<string | null>(null)
   const promptCtxRef = useRef<PromptContext>({})
   const conversationLogRef = useRef<{ role: string; content: string; timestamp: string }[]>([])
+  // Phase 5: warmup handoff — read once from sessionStorage (consumed immediately)
+  const warmupBlockRef = useRef<string>('')
 
   // Track stage in a ref so callbacks always see latest value
   const stageRef = useRef<InterviewStage>('idle')
@@ -88,13 +99,23 @@ export function useInterview(slug?: string): UseInterviewReturn {
     setStage(s)
   }
 
+  // Phase 5: read warmup handoff once on mount (consumed from sessionStorage)
+  useEffect(() => {
+    const handoff = readAndClearWarmupHandoff()
+    if (handoff) {
+      warmupBlockRef.current = buildWarmupContextBlock(handoff)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const appendMessage = useCallback((msg: Message) => {
     setMessages((prev) => [...prev, msg])
   }, [])
 
   const getSystemPrompt = useCallback(
-    (currentStage: InterviewStage) =>
-      buildSystemPrompt(question, currentStage, hintsGiven, askedClarifying, promptCtxRef.current),
+    (currentStage: InterviewStage) => {
+      const base = buildSystemPrompt(question, currentStage, hintsGiven, askedClarifying, promptCtxRef.current)
+      return warmupBlockRef.current ? base + warmupBlockRef.current : base
+    },
     [question, hintsGiven, askedClarifying],
   )
 
@@ -131,9 +152,27 @@ export function useInterview(slug?: string): UseInterviewReturn {
 
       setIsThinking(true)
 
+      // Phase 5: rolling conversation window — keep last MAX_LIVE_MESSAGES live.
+      // Older messages are summarized into a single system note prepended to the prompt.
+      // This bounds token cost without losing critical context.
+      let activeMessages = [...messages, userMsg]
+      let conversationPreamble = ''
+      if (activeMessages.length > MAX_LIVE_MESSAGES) {
+        const toSummarize = activeMessages.slice(0, activeMessages.length - MAX_LIVE_MESSAGES)
+        activeMessages = activeMessages.slice(activeMessages.length - MAX_LIVE_MESSAGES)
+        // Build a compact inline summary of the trimmed messages
+        const summaryLines = toSummarize
+          .filter((m) => m.role !== 'system')
+          .map((m) => `${m.role === 'user' ? 'Candidate' : 'You'}: ${m.content.slice(0, 120)}${m.content.length > 120 ? '...' : ''}`)
+        conversationPreamble = `[Earlier in this session (summarized):\n${summaryLines.join('\n')}]\n\n`
+      }
+
       // Build current conversation for API
-      const currentMessages = [...messages, userMsg]
-      const systemPrompt = getSystemPrompt(stageRef.current)
+      const currentMessages = activeMessages
+      const rawSystemPrompt = getSystemPrompt(stageRef.current)
+      const systemPrompt = conversationPreamble
+        ? `${rawSystemPrompt}\n\n${conversationPreamble}`
+        : rawSystemPrompt
 
       // Stream the AI response
       const assistantMsg = makeMessage('assistant', '')
@@ -208,6 +247,15 @@ export function useInterview(slug?: string): UseInterviewReturn {
         if (previousSolutions.length > 0) {
           promptCtxRef.current.previousSolutions = previousSolutions
         }
+
+        // Phase 5: load long-term coach memory for this topic
+        await expireOldSummaries().catch(() => {})
+        const topicIdForMemory = row.topic_id ?? null
+        const memories = await loadSessionMemory(topicIdForMemory).catch(() => [])
+        if (memories.length > 0) {
+          promptCtxRef.current.coachMemory = memories
+        }
+
         setQuestion(q)
         activeQuestion = q
       }
@@ -218,6 +266,21 @@ export function useInterview(slug?: string): UseInterviewReturn {
         dbSessionIdRef.current = dbSession.id
         const attempt = await createAttempt(dbSession.id, activeQuestion.id).catch(() => null)
         if (attempt) dbAttemptIdRef.current = attempt.id
+
+        // Phase 5: save context snapshot — what the AI knew at session start
+        saveSessionContext(dbSession.id, {
+          profile_snapshot: {
+            display_name: '',   // profileSummary is a string; snapshot is best-effort
+            experience_years: 0,
+            primary_role: '',
+            target_companies: [],
+            strengths: [],
+            weaknesses: [],
+          },
+          topic_mastery: promptCtxRef.current.topicMastery ?? null,
+          memories_loaded: promptCtxRef.current.coachMemory?.length ?? 0,
+          solutions_loaded: promptCtxRef.current.previousSolutions?.length ?? 0,
+        }).catch(() => {})
       }
     } catch (err) {
       console.warn('[useInterview] Phase 2 init error (non-fatal):', err)
@@ -313,12 +376,13 @@ export function useInterview(slug?: string): UseInterviewReturn {
     )
 
     // Phase 2: finalize DB attempt after feedback is delivered
-    // We do this asynchronously so it doesn't block UI
     const attemptId = dbAttemptIdRef.current
     const sessionId = dbSessionIdRef.current
+
+    // Grab last AI message — should contain both <feedback_json> and <memory_json>
+    const lastAI = [...messages].reverse().find(m => m.role === 'assistant')
+
     if (attemptId) {
-      // Grab last AI message which should contain the feedback JSON
-      const lastAI = [...messages].reverse().find(m => m.role === 'assistant')
       const feedbackRaw = lastAI ? parseFeedbackJson(lastAI.content) : null
       const aiScore = feedbackRaw
         ? Math.round((feedbackRaw.correctness + feedbackRaw.efficiency + feedbackRaw.communication) / 3)
@@ -333,6 +397,16 @@ export function useInterview(slug?: string): UseInterviewReturn {
         conversationLog: conversationLogRef.current as never,
       }).catch(err => console.warn('[useInterview] finalizeAttempt error:', err))
     }
+
+    // Phase 5: parse and save AI memory notes
+    if (sessionId && lastAI) {
+      const memoryItems = parseMemoryJson(lastAI.content)
+      if (memoryItems && memoryItems.length > 0) {
+        upsertMemories(sessionId, memoryItems)
+          .catch(err => console.warn('[useInterview] upsertMemories error:', err))
+      }
+    }
+
     if (sessionId) {
       dbEndSession(sessionId).catch(err => console.warn('[useInterview] endSession DB error:', err))
     }

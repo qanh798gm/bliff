@@ -44,12 +44,34 @@ Built for one person: a 6-year frontend engineer grinding toward FAANG.
 | Phase 1 — MVP | ✅ Done | Voice + Monaco editor + LLM + Two Sum working locally |
 | Phase 2 — Data Layer | ✅ Done | Supabase schema + 150+ questions + adaptive engine |
 | Phase 3 — Dashboard & Auth | ✅ Done | Auth, onboarding, dashboard, session history, routing |
-| Phase 4 — Polish & Deploy | 🚧 In Progress | Web Worker sandbox, mobile, real auth, production deploy |
+| Phase 4 — Practice & Solutions | ✅ Done | Practice mode, multi-solution tracking, rich test tiers, layout redesign |
+| Phase 5 — AI Memory | 🚧 In Progress | Long-term memory layer, coach insights, session context snapshots |
 
-### Phase 4 — In Progress
+### Phase 5 — In Progress
 
-- **Fix: clickable question rows** — Clicking anywhere on a row in the Question Browser navigates directly to `/interview/:slug`; no need to hover and click the "Practice →" button
-- **Fix: stale question in panel (Two Sum bug)** — `useInterview` now eagerly fetches the question by slug on mount via `useEffect`, so `QuestionPanel` shows the correct problem immediately instead of defaulting to Two Sum until session start
+**Goal:** Give Bliff a persistent AI memory layer and a voice-first mentor on the dashboard.
+
+**Completed so far:**
+- `user_memory` + `session_context` DB migrations applied
+- `memoryService.ts` — `loadSessionMemory`, `upsertMemories`, `expireOldSummaries`, `saveSessionContext`
+- `promptBuilder.ts` — `buildMemorySection`, `parseMemoryJson`, `buildWarmupContext`, `parseMentorRecommendations`
+- `useInterview.ts` + `usePractice.ts` — load session context at start, save AI memory at end, rolling 20-message window, warmup handoff from mentor
+- `useMentorChat` hook — personalised auto-greeting, free-form chat, recommendation cards
+- `MentorChatPanel` — voice-first chat panel (STT mic, TTS speaker button), recommendation cards that navigate with warmup context
+- Dashboard layout → 3-column `[description | stats+radar | AI mentor]`
+- Interview + Practice screens → 3-column `[problem | editor+tests | AI chat]`
+- Bug fixes: `maybeSingle()` for empty profile, correct column names in stats query, SSE stream `[DONE]` exit, React Strict Mode double-invoke guard
+
+See [`plans/10-phase5-memory-architecture.md`](plans/10-phase5-memory-architecture.md) for full design.
+
+### Phase 4 — What Was Built
+
+- **Practice Mode** (`/practice/:slug`) — code-first, AI opt-in, silent stat tracking
+- **Multi-solution tracking** — `user_solutions` table; save ranked Brute Force → Optimal solutions per question; AI references prior solutions in prompts
+- **Rich test case tiers** — basic / edge / corner / performance schema; `practice_attempts` + `practice_solved` stats
+- **Layout redesign** — editor + test results always visible; AI chat in left panel
+- **Question Browser** — dual hover buttons: `▶ Practice` and `🎙 Interview`
+- **Fixes** — clickable question rows, stale question panel bug (Two Sum default)
 
 ### Phase 3 — What Was Built
 

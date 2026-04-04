@@ -132,6 +132,28 @@ export type SolutionLabel =
   | 'Alternative'
   | string   // free-form custom label
 
+// ---- user_memory — Phase 5: AI long-term memory ────────────────
+export type MemoryType =
+  | 'habit'          // behavioral pattern across sessions
+  | 'skill_pattern'  // cross-topic skill observation
+  | 'topic_insight'  // detailed insight about a specific topic
+  | 'weekly_summary' // weekly rollup, expires after 30 days
+  | 'session_note'   // one-off note from a specific session
+
+export interface UserMemoryRow {
+  id: string
+  user_id: string
+  memory_type: MemoryType
+  topic_id: string | null         // NULL = global/cross-topic
+  content: string                 // natural language, 1-3 sentences
+  evidence_count: number          // sessions corroborating this memory
+  confidence: number              // 0.0–1.0
+  source_session_id: string | null
+  valid_until: string | null      // ISO timestamp or null (evergreen)
+  created_at: string
+  updated_at: string
+}
+
 export interface SessionRow {
   id: string
   user_id: string | null
@@ -141,7 +163,30 @@ export interface SessionRow {
   voice_language: string
   overall_score: number | null
   ai_feedback_summary: string | null
+  session_context: SessionContextSnapshot | null   // Phase 5: what AI knew at session start
+  conversation_summary: string | null              // Phase 5: rolling summary of trimmed messages
   created_at: string
+}
+
+// ---- session_context JSONB shape (Phase 5) ────────────────────
+export interface SessionContextSnapshot {
+  profile_snapshot: {
+    display_name: string
+    experience_years: number
+    primary_role: string
+    target_companies: string[]
+    strengths: string[]
+    weaknesses: string[]
+  }
+  topic_mastery: {
+    topicName: string
+    masteryLevel: string
+    totalAttempts: number
+    avgScore: number
+  } | null
+  memories_loaded: number
+  solutions_loaded: number
+  context_assembled_at: string   // ISO timestamp
 }
 
 export interface ConversationMessage {
@@ -219,6 +264,11 @@ export interface Database {
         Row: UserSolutionRow
         Insert: Omit<UserSolutionRow, 'id' | 'created_at' | 'updated_at'> & { id?: string }
         Update: Partial<Omit<UserSolutionRow, 'id' | 'created_at' | 'updated_at'>>
+      }
+      user_memory: {
+        Row: UserMemoryRow
+        Insert: Omit<UserMemoryRow, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+        Update: Partial<Omit<UserMemoryRow, 'id' | 'created_at' | 'updated_at'>>
       }
     }
     Views: Record<string, never>

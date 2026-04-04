@@ -232,67 +232,18 @@ export function InterviewRoom() {
         </div>
       </header>
 
-      {/* Main 2-column layout */}
+      {/* Main 3-column layout: description (1) | editor+tests (2) | AI chat (1) */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── LEFT PANEL — Problem + AI Chat + Voice ─────── */}
-        <div className="w-80 flex-shrink-0 flex flex-col border-r border-gray-800 overflow-hidden">
-          {/* Problem description (scrollable, upper portion) */}
-          <div className="flex-1 overflow-y-auto p-4 border-b border-gray-800/60 min-h-0">
+
+        {/* ── COL 1 (1fr): Problem description ──────────── */}
+        <div className="w-72 flex-shrink-0 flex flex-col border-r border-gray-800 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
             <QuestionPanel question={interview.question} />
-          </div>
-
-          {/* AI Chat transcript (always visible below problem) */}
-          <div className="flex-shrink-0 flex flex-col" style={{ height: '45%' }}>
-            <div className="px-3 py-1.5 border-b border-gray-800 bg-gray-900/50">
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                AI Conversation
-              </span>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3 min-h-0">
-              <ChatTranscript
-                messages={interview.messages}
-                isThinking={interview.isThinking}
-              />
-            </div>
-
-            {/* Text input */}
-            <div className="flex gap-2 p-2 border-t border-gray-800">
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Type a message… (Enter to send)"
-                rows={1}
-                disabled={interview.stage === 'idle'}
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-40"
-              />
-              <button
-                onClick={handleSendText}
-                disabled={!textInput.trim() || interview.isThinking || interview.stage === 'idle'}
-                className="px-2 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors self-end"
-              >
-                ↑
-              </button>
-            </div>
-
-            {/* Voice controls */}
-            <div className="px-2 pb-2 border-t border-gray-800 pt-1">
-              <VoiceControls
-                status={voice.status}
-                isSupported={voice.isSupported}
-                isSpeaking={voice.isSpeaking}
-                language={language}
-                interimTranscript={voice.interimTranscript}
-                onToggleListen={voice.toggleListening}
-                onStopSpeaking={voice.stopSpeaking}
-                onLanguageChange={setLanguage}
-              />
-            </div>
           </div>
         </div>
 
-        {/* ── RIGHT PANEL — Editor (top) + Tests (bottom) ── */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* ── COL 2 (2fr): Code editor + action bar + tests ── */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden border-r border-gray-800">
           {/* Code editor (upper flex-1) */}
           <div className="flex-1 overflow-hidden p-3 min-h-0">
             <CodeEditor
@@ -334,6 +285,57 @@ export function InterviewRoom() {
             <TestResultsPanel
               results={interview.testResults}
               isRunning={interview.isRunningTests}
+            />
+          </div>
+        </div>
+
+        {/* ── COL 3 (1fr): AI Chat + Voice ──────────────── */}
+        <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-gray-800 bg-gray-900/50 flex-shrink-0">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              AI Conversation
+            </span>
+          </div>
+
+          {/* Chat transcript */}
+          <div className="flex-1 overflow-y-auto p-3 min-h-0">
+            <ChatTranscript
+              messages={interview.messages}
+              isThinking={interview.isThinking}
+            />
+          </div>
+
+          {/* Text input */}
+          <div className="flex gap-2 p-2 border-t border-gray-800">
+            <textarea
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message… (Enter to send)"
+              rows={1}
+              disabled={interview.stage === 'idle'}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-40"
+            />
+            <button
+              onClick={handleSendText}
+              disabled={!textInput.trim() || interview.isThinking || interview.stage === 'idle'}
+              className="px-2 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors self-end"
+            >
+              ↑
+            </button>
+          </div>
+
+          {/* Voice controls */}
+          <div className="px-2 pb-2 border-t border-gray-800 pt-1">
+            <VoiceControls
+              status={voice.status}
+              isSupported={voice.isSupported}
+              isSpeaking={voice.isSpeaking}
+              language={language}
+              interimTranscript={voice.interimTranscript}
+              onToggleListen={voice.toggleListening}
+              onStopSpeaking={voice.stopSpeaking}
+              onLanguageChange={setLanguage}
             />
           </div>
         </div>

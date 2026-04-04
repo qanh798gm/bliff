@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { Question, Message, TestResult, UserSolution, PracticeAiMode } from '../types'
+import type { Question, Message, TestResult, UserSolution, PracticeAiMode, UserMemory } from '../types'
 import { TWO_SUM } from '../data/questions'
 import { fetchQuestionBySlug } from '../services/questionService'
 import { rowToQuestion } from '../lib/questionAdapter'
 import { runTests } from '../services/codeRunner'
 import { streamChatCompletion } from '../services/llm'
-import { buildSystemPrompt } from '../lib/promptBuilder'
+import { buildSystemPrompt, readAndClearWarmupHandoff, buildWarmupContextBlock } from '../lib/promptBuilder'
 import { buildProfileSummary, upsertPracticeStats } from '../services/profileService'
 import {
   fetchSolutionsForQuestion,
@@ -15,6 +15,7 @@ import {
   fetchSolutionsForPrompt,
 } from '../services/solutionService'
 import { createSession, endSession as dbEndSession, createAttempt, finalizeAttempt } from '../services/sessionService'
+import { loadSessionMemory, expireOldSummaries } from '../services/memoryService'
 
 // ============================================================
 // usePractice — state machine for Practice Mode
@@ -81,6 +82,17 @@ export function usePractice(slug?: string): UsePracticeReturn {
   const dbAttemptIdRef = useRef<string | null>(null)
   const runCountRef = useRef(0)
   const startTimeRef = useRef<number>(Date.now())
+  // Phase 5: coach memory loaded at session start for AI panel
+  const coachMemoryRef = useRef<UserMemory[]>([])
+  // Phase 5: warmup handoff — read once on mount from sessionStorage
+  const warmupBlockRef = useRef<string>('')
+
+  useEffect(() => {
+    const handoff = readAndClearWarmupHandoff()
+    if (handoff) {
+      warmupBlockRef.current = buildWarmupContextBlock(handoff)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load question from slug on mount ──────────────────────
   useEffect(() => {
@@ -92,8 +104,8 @@ export function usePractice(slug?: string): UsePracticeReturn {
         setQuestion(q)
         // Load solutions for this question
         loadSolutions(q.id)
-        // Start silent tracking session
-        void startPracticeSession(q.id)
+        // Start silent tracking session — pass topic_id for memory loading
+        void startPracticeSession(q.id, row.topic_id)
       })
       .catch(() => { /* keep TWO_SUM fallback */ })
       .finally(() => setIsLoadingQuestion(false))
@@ -110,9 +122,15 @@ export function usePractice(slug?: string): UsePracticeReturn {
   }
 
   // ── Silent session tracking (practice mode) ───────────────
-  async function startPracticeSession(questionId: string) {
+  async function startPracticeSession(questionId: string, topicId?: string) {
     try {
       startTimeRef.current = Date.now()
+
+      // Phase 5: load coach memories for the AI panel before session starts
+      await expireOldSummaries().catch(() => {})
+      const memories = await loadSessionMemory(topicId ?? null).catch(() => [])
+      coachMemoryRef.current = memories
+
       const session = await createSession('practice').catch(() => null)
       if (session) {
         dbSessionIdRef.current = session.id
@@ -222,16 +240,20 @@ export function usePractice(slug?: string): UsePracticeReturn {
     setIsThinking(true)
 
     try {
-      // Build practice-mode AI context (includes full code of saved solutions)
+      // Build practice-mode AI context (includes full code of saved solutions + coach memory)
       const [profileSummary, previousSolutions] = await Promise.all([
         buildProfileSummary().catch(() => ''),
         fetchSolutionsForPrompt(question.id, true).catch(() => []),
       ])
 
-      const systemPrompt = buildSystemPrompt(question, 'solve', 0, false, {
+      const baseSystemPrompt = buildSystemPrompt(question, 'solve', 0, false, {
         profileSummary,
         previousSolutions,
+        coachMemory: coachMemoryRef.current.length > 0 ? coachMemoryRef.current : undefined,
       })
+      const systemPrompt = warmupBlockRef.current
+        ? baseSystemPrompt + warmupBlockRef.current
+        : baseSystemPrompt
 
       const assistantMsg = makeMessage('assistant', '')
       setMessages((prev) => [...prev, assistantMsg])

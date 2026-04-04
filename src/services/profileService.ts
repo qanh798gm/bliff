@@ -151,26 +151,27 @@ export async function loadProfile(userId: string): Promise<UserProfileRow | null
     .from('user_profile')
     .select('*')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
 
-  if (error?.code === 'PGRST116') return null // not found
   if (error) throw error
-  return data as UserProfileRow
+  return data as UserProfileRow | null
 }
 
 // ── Load topic stats (joined with topic name) ────────────────
-export async function loadTopicStats(userId: string): Promise<TopicStatRow[]> {
+// NOTE: user_topic_stats is a global table (no user_id) — uses getTopicStats() internally.
+// The userId parameter is kept for API compatibility but not used in the query.
+export async function loadTopicStats(_userId: string): Promise<TopicStatRow[]> {
   const { data, error } = await supabase
     .from('user_topic_stats')
-    .select('topic_id, attempts_count, solved_count, mastery_level, last_attempted_at, topics(name)')
-    .eq('user_id', userId)
+    .select('topic_id, total_attempts, solved_count, mastery_level, last_attempted_at, topics(name)')
+    .order('total_attempts', { ascending: false })
 
   if (error) throw error
   if (!data) return []
 
   return (data as unknown as Array<{
     topic_id: string
-    attempts_count: number
+    total_attempts: number
     solved_count: number
     mastery_level: string
     last_attempted_at: string | null
@@ -178,7 +179,7 @@ export async function loadTopicStats(userId: string): Promise<TopicStatRow[]> {
   }>).map(row => ({
     topic_id: row.topic_id,
     topic_name: row.topics?.name ?? row.topic_id,
-    attempts_count: row.attempts_count,
+    attempts_count: row.total_attempts,    // normalize to canonical field name
     solved_count: row.solved_count,
     mastery_score: masteryLevelToScore(row.mastery_level),
     last_attempted_at: row.last_attempted_at,

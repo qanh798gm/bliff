@@ -84,10 +84,11 @@ export async function streamChatCompletion(
   const reader = response.body?.getReader()
   const decoder = new TextDecoder()
   let fullText = ''
+  let streamDone = false
 
   if (!reader) throw new Error('No response body')
 
-  while (true) {
+  while (!streamDone) {
     const { done, value } = await reader.read()
     if (done) break
 
@@ -96,8 +97,11 @@ export async function streamChatCompletion(
 
     for (const line of lines) {
       if (line.startsWith('data: ')) {
-        const data = line.slice(6)
-        if (data === '[DONE]') break
+        const data = line.slice(6).trim()
+        if (data === '[DONE]') {
+          streamDone = true
+          break
+        }
 
         try {
           const parsed = JSON.parse(data) as {

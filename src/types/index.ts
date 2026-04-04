@@ -137,6 +137,36 @@ export interface PreviousSolutionContext {
   code?: string      // included in Practice Mode; omitted in Interview to avoid spoilers
 }
 
+// --- Phase 5: Long-term memory types ---
+export type MemoryType =
+  | 'habit'          // behavioral pattern across sessions
+  | 'skill_pattern'  // cross-topic skill observation
+  | 'topic_insight'  // detailed insight about a specific topic
+  | 'weekly_summary' // weekly rollup, expires after 30 days
+  | 'session_note'   // one-off note from a specific session
+
+// App-layer representation of a user_memory row (camelCase)
+export interface UserMemory {
+  id: string
+  memoryType: MemoryType
+  topicId: string | null
+  content: string
+  evidenceCount: number
+  confidence: number              // 0.0–1.0
+  sourceSessionId: string | null
+  validUntil: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// What the LLM outputs inside <memory_json>...</memory_json> at session end
+export interface MemoryWriteItem {
+  memory_type: MemoryType
+  topic_slug: string | null       // resolved to topic_id by memoryService
+  content: string
+  confidence: number
+}
+
 export interface PromptContext {
   profileSummary?: string
   topicMastery?: {
@@ -146,7 +176,34 @@ export interface PromptContext {
     avgScore: number
   }
   previousSolutions?: PreviousSolutionContext[]   // solution history for this question
+  coachMemory?: UserMemory[]                      // Phase 5: long-term memory injected at session start
 }
 
 // --- Practice Mode AI panel mode ---
 export type PracticeAiMode = 'off' | 'chat'
+
+// --- Phase 5: Mentor Chat recommendation cards ---
+// Parsed from <recommendations> block in mentor chat AI responses.
+// Rendered as clickable cards on the Dashboard.
+export interface MentorRecommendation {
+  type: 'practice' | 'interview'
+  slug: string
+  title: string
+  reason: string
+}
+
+// --- Phase 5: Warmup handoff — mentor → interview/practice ---
+// Written to sessionStorage when user clicks a recommendation card.
+// Read once by useInterview/usePractice on mount, then deleted.
+export interface WarmupHandoff {
+  /** 2-3 sentence summary of the mentor chat — injected as [WARMUP CONTEXT] */
+  summary: string
+  /** The problem slug that was recommended */
+  recommendedSlug: string
+  recommendedType: 'practice' | 'interview'
+  /** Unix timestamp — used to reject stale handoffs (> 10 min old) */
+  timestamp: number
+}
+
+export const WARMUP_HANDOFF_KEY = 'bliff_warmup_handoff'
+export const WARMUP_HANDOFF_TTL_MS = 10 * 60 * 1000   // 10 minutes

@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { useAuth } from '../contexts/AuthContext'
 import { loadProfile, loadTopicStats } from '../services/profileService'
+import { MentorChatPanel } from '../components/MentorChatPanel'
 import type { UserProfileRow, TopicStatRow } from '../types/database'
 
 // ============================================================
@@ -124,9 +125,9 @@ export function DashboardPage() {
         </div>
       </nav>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-bold">Hey, {displayName} 👋</h2>
             <p className="text-gray-400 text-sm mt-0.5">
@@ -138,66 +139,21 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             {profile && <StreakBadge streak={profile.current_streak} />}
             <button
-              onClick={() => navigate('/interview')}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg text-sm transition-colors"
+              onClick={() => navigate('/questions')}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg text-sm transition-colors"
             >
-              Start interview →
+              Browse questions
             </button>
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard label="Total attempts" value={totalAttempts} />
-          <StatCard label="Problems solved" value={totalSolved} />
-          <StatCard
-            label="Current streak"
-            value={profile?.current_streak ?? 0}
-            sub="days"
-          />
-          <StatCard
-            label="Longest streak"
-            value={profile?.longest_streak ?? 0}
-            sub="days"
-          />
-        </div>
+        {/* Main 3-column layout: description (1) | charts/stats (2) | mentor chat (1) */}
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr_1fr] gap-6 items-start">
 
-        {/* Main content */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Radar chart */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-300 mb-4">Topic mastery</h3>
-            {radarData.length === 0 ? (
-              <div className="h-48 flex items-center justify-center text-gray-600 text-sm">
-                Complete some sessions to see your radar chart
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#374151" />
-                  <PolarAngleAxis
-                    dataKey="topic"
-                    tick={{ fill: '#9CA3AF', fontSize: 10 }}
-                  />
-                  <Radar
-                    name="Mastery"
-                    dataKey="score"
-                    stroke="#6366F1"
-                    fill="#6366F1"
-                    fillOpacity={0.3}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                    formatter={(v: unknown) => [`${v}%`, 'Mastery']}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Weak areas + topic list */}
+          {/* ── Col 1: Profile description, focus areas, topic list ── */}
           <div className="space-y-4">
-            {/* Weak areas */}
+
+            {/* Focus areas */}
             {weakTopics.length > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <h3 className="text-sm font-semibold text-gray-300 mb-3">Focus areas</h3>
@@ -206,7 +162,7 @@ export function DashboardPage() {
                     <div key={t.topic_id} className="flex items-center justify-between">
                       <span className="text-sm text-gray-300">{t.topic_name}</span>
                       <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-indigo-500 rounded-full"
                             style={{ width: `${masteryToScore(t.mastery_score)}%` }}
@@ -225,7 +181,7 @@ export function DashboardPage() {
             {/* All topics */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="text-sm font-semibold text-gray-300 mb-3">All topics</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {stats.length === 0 ? (
                   <p className="text-gray-600 text-sm">No sessions yet</p>
                 ) : (
@@ -233,8 +189,8 @@ export function DashboardPage() {
                     <div key={t.topic_id} className="flex items-center justify-between">
                       <span className="text-xs text-gray-400">{t.topic_name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-600">{t.attempts_count} attempts</span>
-                        <div className="w-16 h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <span className="text-xs text-gray-600">{t.attempts_count}</span>
+                        <div className="w-14 h-1 bg-gray-800 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-indigo-500 rounded-full"
                             style={{ width: `${masteryToScore(t.mastery_score)}%` }}
@@ -246,25 +202,82 @@ export function DashboardPage() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Empty state CTA */}
-        {totalAttempts === 0 && (
-          <div className="bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-6 text-center">
-            <div className="text-3xl mb-3">🎯</div>
-            <h3 className="text-white font-semibold mb-1">Ready for your first mock interview?</h3>
-            <p className="text-gray-400 text-sm mb-4">
-              Bliff will pick the best question for your level and track your progress over time.
-            </p>
-            <button
-              onClick={() => navigate('/interview')}
-              className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg text-sm transition-colors"
-            >
-              Start now →
-            </button>
+            {/* Empty state CTA */}
+            {totalAttempts === 0 && (
+              <div className="bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-5 text-center">
+                <div className="text-2xl mb-2">🎯</div>
+                <h3 className="text-white font-semibold text-sm mb-1">Ready for your first session?</h3>
+                <p className="text-gray-400 text-xs mb-3">
+                  Ask Bliff what to practice — or jump in.
+                </p>
+                <button
+                  onClick={() => navigate('/interview')}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg text-sm transition-colors"
+                >
+                  Start interview →
+                </button>
+              </div>
+            )}
+          </div>{/* end col 1 */}
+
+          {/* ── Col 2: Stats + Radar chart (2fr) ──────────── */}
+          <div className="space-y-6">
+
+            {/* Stats row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <StatCard label="Total attempts" value={totalAttempts} />
+              <StatCard label="Problems solved" value={totalSolved} />
+              <StatCard
+                label="Current streak"
+                value={profile?.current_streak ?? 0}
+                sub="days"
+              />
+              <StatCard
+                label="Longest streak"
+                value={profile?.longest_streak ?? 0}
+                sub="days"
+              />
+            </div>
+
+            {/* Radar chart */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-gray-300 mb-4">Topic mastery</h3>
+              {radarData.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-gray-600 text-sm">
+                  Complete some sessions to see your radar chart
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#374151" />
+                    <PolarAngleAxis
+                      dataKey="topic"
+                      tick={{ fill: '#9CA3AF', fontSize: 10 }}
+                    />
+                    <Radar
+                      name="Mastery"
+                      dataKey="score"
+                      stroke="#6366F1"
+                      fill="#6366F1"
+                      fillOpacity={0.3}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8 }}
+                      formatter={(v: unknown) => [`${v}%`, 'Mastery']}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>{/* end col 2 */}
+
+          {/* ── Col 3: Mentor Chat (1fr) ───────────────────── */}
+          <div className="xl:sticky xl:top-6" style={{ height: 'calc(100vh - 96px)', minHeight: 480 }}>
+            <MentorChatPanel userId={user?.id} />
           </div>
-        )}
+
+        </div>{/* end 2-col grid */}
       </div>
     </div>
   )

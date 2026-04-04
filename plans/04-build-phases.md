@@ -98,24 +98,59 @@ Select question via weighted random from top candidates.
 
 ---
 
-## Phase 4: Polish & Production — 🚧 In Progress
+## Phase 4: Practice & Solutions — ✅ COMPLETED
 
-**Goal**: Safe code execution, mobile support, real OAuth, production deploy.
+**Goal**: Transform Bliff from a single-mode interview simulator into a full learning platform with practice mode, multi-solution tracking, and a redesigned layout.
 
-### Bug Fixes Applied (Phase 4 start)
+### Deliverables — All Completed
 
-- ✅ **Clickable question rows** — Clicking anywhere on a row in the Question Browser now navigates directly to `/interview/:slug`; the "Practice →" button became a visual hint only (no nested click needed)
-- ✅ **Wrong question shown in panel** — `useInterview` now eagerly fetches the question by slug on hook mount via `useEffect`, so `QuestionPanel` immediately shows the correct problem title/description/examples instead of defaulting to Two Sum until `startSession` runs
+1. ✅ **Practice Mode** (`/practice/:slug`) — code-first, no stage machine, AI opt-in via collapsible panel; silent stat tracking always on
+2. ✅ **Multi-solution tracking** — `user_solutions` table with RLS + indexes; save ranked Brute Force → Optimized solutions per question
+3. ✅ **`solutionService.ts`** — fetch, save, update, delete, markAsBest operations
+4. ✅ **Save Solution modal** — label dropdown, time/space complexity fields, notes
+5. ✅ **Solution History panel** — ranked list of saved solutions in Practice left panel; view + set best
+6. ✅ **Rich test case tiers** — `basic | edge | corner | performance` schema documented; `practice_attempts` + `practice_solved` columns on `user_topic_stats`
+7. ✅ **Layout redesign** — editor + test results always-visible split; AI chat in left panel in both Practice and Interview modes
+8. ✅ **Question Browser dual buttons** — `▶ Practice` → `/practice/:slug` and `🎙 Interview` → `/interview/:slug` on row hover
+9. ✅ **AI solution context** — `promptBuilder.ts` injects `previousSolutions` into system prompt; AI references prior solutions in Interview mode without spoiling code
+10. ✅ **`usePractice.ts`** — practice mode state: run count, time on page, AI toggle, solution management
+11. ✅ **Bug fixes** — clickable question rows, stale question panel (Two Sum default fixed)
 
-### Planned Deliverables
+---
 
-1. [ ] **Web Worker code sandbox** — Move `Function()` evaluation off main thread; isolated sandbox with timeout kill
-2. [ ] **Multi-language editor support** — Python, Java, Go stubs + test runner adapters
-3. [ ] **Google OAuth login** — Swap magic link for Google provider in Supabase Auth
-4. [ ] **Mobile-responsive layout** — Touch-friendly controls, responsive grid, voice UX on mobile
-5. [ ] **Streaks + calendar heatmap** — Visual practice history on dashboard
-6. [ ] **Spaced repetition scheduler** — SM-2 algorithm to auto-schedule question reviews
-7. [ ] **Session export** — PDF/Markdown report of session with AI feedback
-8. [ ] **Groq Whisper STT** — Replace Web Speech API with Groq Whisper for better accuracy + language support
-9. [ ] **Production deployment** — Vercel (frontend) + Supabase hosted project (DB + Auth)
-10. [ ] **Custom question import** — Add personal questions to question bank
+## Phase 5: AI Memory Architecture — 🚧 In Progress
+
+**Goal**: Give Bliff's AI mentor genuine long-term memory across sessions — patterns, habits, and topic insights — so it builds a continuously improving model of you.
+
+> See full design: [`plans/10-phase5-memory-architecture.md`](10-phase5-memory-architecture.md)
+
+### Architecture Decision: Why NOT RAG or Graph
+
+- **RAG (vector search)**: Wrong tool for this domain. RAG retrieves unstructured documents by semantic similarity. Bliff's memory is structured behavioral data (scores, patterns, history) — vectors add noise, not signal.
+- **Knowledge Graph**: Theoretically elegant but operationally overkill for a single-user personal tool. 80% infrastructure work, 20% value.
+- **Hierarchical Summarization** ✅: The AI writes notes about you at session end and reads them at session start. Natural fit. Mirrors how a real human coach would work.
+
+### Memory Layers
+
+**Short-term** (per-session, ephemeral, already exists):
+- Live `conversation_log[]` in React state → persisted to `attempts.conversation_log` at session end
+- Frozen `session_context` snapshot loaded from long-term at session start
+- Rolling 20-message window with inline summarization of older messages
+
+**Long-term** (persistent in Supabase, grows over time):
+- `user_profile` — static traits (exists)
+- `user_topic_stats` — aggregated metrics per topic (exists)
+- `user_solutions` — saved ranked code solutions (Phase 4, done)
+- `attempts` — raw session history (exists)
+- `user_memory` — **NEW**: AI-written natural language insights
+
+### Deliverables
+
+1. [ ] **`user_memory` table** — migration `044_user_memory.sql`; types: `habit | skill_pattern | topic_insight | weekly_summary | session_note`; RLS + indexes; `confidence` score + optional `valid_until` TTL
+2. [ ] **`session_context` column** — migration `045_session_context.sql`; JSONB snapshot of what context was loaded at session start (for audit/replay)
+3. [ ] **Types** — `UserMemoryRow`, `MemoryType` in `database.ts`; `UserMemory`, extended `PromptContext` in `index.ts`
+4. [ ] **`memoryService.ts`** — `loadSessionMemory(userId, topicId)`, `upsertMemories(userId, sessionId, items[])`, `expireOldSummaries()`
+5. [ ] **`promptBuilder.ts` — read** — `buildMemorySection(memories[])` injects `=== COACH MEMORY ===` block (~250 tokens) into every system prompt
+6. [ ] **`promptBuilder.ts` — write** — `<memory_json>` output prompt added to feedback stage; `parseMemoryJson()` parser (mirrors existing `parseFeedbackJson`)
+7. [ ] **`useInterview.ts`** — `loadSessionContext()` at session start; `saveSessionMemory()` after feedback parsed; `trimConversation()` rolling 20-message window
+8. [ ] **`usePractice.ts`** — `loadSessionContext()` for AI panel memory injection
