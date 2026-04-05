@@ -1,14 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { VoiceStatus, VoiceLanguage } from '../types'
+import { GroqSttRecorder } from '../services/groqStt'
 
 // ============================================================
-// useVoice — Web Speech API hook
-// STT: SpeechRecognition (push-to-talk or VAD)
-// TTS: SpeechSynthesis
-// Phase 2+: swap to Groq provider via VITE_STT_PROVIDER env
+// useVoice — unified voice hook
+//
+// STT provider is selected by VITE_STT_PROVIDER env var:
+//   "webspeech" (default) — browser Web Speech API (free, lower quality)
+//   "groq"                — Groq Whisper API (push-to-talk, high quality)
+//
+// TTS always uses browser SpeechSynthesis (free, good enough for now).
 // ============================================================
 
-// The Web Speech API is not fully typed in lib.dom.d.ts — declare all needed types manually
+// ── Web Speech API types (not fully typed in lib.dom.d.ts) ──
 
 interface ISpeechRecognitionResult {
   readonly isFinal: boolean
@@ -63,8 +67,12 @@ declare global {
   }
 }
 
+// ── Hook types ───────────────────────────────────────────────
+
 interface UseVoiceOptions {
   language?: VoiceLanguage
+  /** Current question title — passed to Whisper prompt priming for better vocabulary recognition */
+  questionTitle?: string
   onTranscript?: (text: string, isFinal: boolean) => void
   onSpeechEnd?: () => void
 }
@@ -76,41 +84,92 @@ interface UseVoiceReturn {
   isSpeaking: boolean
   interimTranscript: string
   language: VoiceLanguage
+  provider: 'webspeech' | 'groq'
   startListening: () => void
   stopListening: () => void
   speak: (text: string, onEnd?: () => void) => void
   stopSpeaking: () => void
   setLanguage: (lang: VoiceLanguage) => void
+  setQuestionTitle: (title: string) => void
   toggleListening: () => void
 }
 
+// ── Read env config once ─────────────────────────────────────
+const STT_PROVIDER = (import.meta.env.VITE_STT_PROVIDER ?? 'webspeech') as 'webspeech' | 'groq'
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY as string | undefined
+
 export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
-  const { language: initialLanguage = 'en-US', onTranscript, onSpeechEnd } = options
+  const { language: initialLanguage = 'en-US', questionTitle, onTranscript, onSpeechEnd } = options
 
   const [status, setStatus] = useState<VoiceStatus>('idle')
   const [language, setLanguage] = useState<VoiceLanguage>(initialLanguage)
   const [interimTranscript, setInterimTranscript] = useState('')
   const [isSpeaking, setIsSpeaking] = useState(false)
 
+  // Decide provider: use groq only if key is present, else fall back to webspeech
+  const provider: 'webspeech' | 'groq' =
+    STT_PROVIDER === 'groq' && !!GROQ_API_KEY ? 'groq' : 'webspeech'
+
+  // ── Web Speech refs ──────────────────────────────────────
   const recognitionRef = useRef<ISpeechRecognition | null>(null)
-  const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis)
   const isListeningRef = useRef(false)
 
+  // ── Groq recorder ref ────────────────────────────────────
+  const groqRecorderRef = useRef<GroqSttRecorder | null>(null)
+
+  // ── TTS ref (shared) ─────────────────────────────────────
+  const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis)
+
   // Check browser support
-  const isSupported =
+  const isWebSpeechSupported =
     typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+
+  const isGroqSupported =
+    typeof window !== 'undefined' &&
+    typeof navigator.mediaDevices?.getUserMedia === 'function' &&
+    typeof MediaRecorder !== 'undefined'
+
+  const isSupported = provider === 'groq' ? isGroqSupported : isWebSpeechSupported
+
+  // Keep Groq recorder in sync with language + question title changes
+  useEffect(() => {
+    groqRecorderRef.current?.setLanguage(language)
+  }, [language])
+
+  const questionTitleRef = useRef(questionTitle)
+  // Keep ref in sync when the option changes (e.g. question navigated in same session)
+  useEffect(() => {
+    questionTitleRef.current = questionTitle
+    groqRecorderRef.current?.setQuestionTitle(questionTitle ?? '')
+  }, [questionTitle])
+
+  const setQuestionTitle = useCallback((title: string) => {
+    questionTitleRef.current = title
+    groqRecorderRef.current?.setQuestionTitle(title)
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop()
       synthRef.current?.cancel()
+      groqRecorderRef.current?.cancel()
     }
   }, [])
 
-  const buildRecognition = useCallback((): ISpeechRecognition | null => {
-    if (!isSupported) return null
+  // ── onTranscript callback ref (avoids stale closure in recorder) ──
+  const onTranscriptRef = useRef(onTranscript)
+  useEffect(() => { onTranscriptRef.current = onTranscript }, [onTranscript])
+
+  const onSpeechEndRef = useRef(onSpeechEnd)
+  useEffect(() => { onSpeechEndRef.current = onSpeechEnd }, [onSpeechEnd])
+
+  // ============================================================
+  // WEB SPEECH — build recognition instance
+  // ============================================================
+  const buildWebSpeechRecognition = useCallback((): ISpeechRecognition | null => {
+    if (!isWebSpeechSupported) return null
 
     const SpeechRecognitionImpl =
       window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -118,8 +177,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     const recognition = new SpeechRecognitionImpl()
 
     recognition.lang = language
-    recognition.continuous = false       // Single utterance per activation
-    recognition.interimResults = true    // Show real-time partial results
+    recognition.continuous = false
+    recognition.interimResults = true
     recognition.maxAlternatives = 1
 
     recognition.onstart = () => {
@@ -145,9 +204,9 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
       if (final) {
         setInterimTranscript('')
-        onTranscript?.(final.trim(), true)
+        onTranscriptRef.current?.(final.trim(), true)
       } else if (interim) {
-        onTranscript?.(interim, false)
+        onTranscriptRef.current?.(interim, false)
       }
     }
 
@@ -155,13 +214,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       setStatus('idle')
       isListeningRef.current = false
       setInterimTranscript('')
-      onSpeechEnd?.()
+      onSpeechEndRef.current?.()
     }
 
     recognition.onerror = (event: ISpeechRecognitionErrorEvent) => {
       console.error('SpeechRecognition error:', event.error)
       isListeningRef.current = false
-
       if (event.error === 'not-allowed') {
         setStatus('error')
       } else if (event.error === 'no-speech') {
@@ -172,57 +230,126 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     }
 
     return recognition
-  }, [isSupported, language, onTranscript, onSpeechEnd])
+  }, [isWebSpeechSupported, language])
 
+  // ============================================================
+  // GROQ — start recording
+  // ============================================================
+  const startGroqRecording = useCallback(async () => {
+    if (!isGroqSupported || !GROQ_API_KEY) {
+      setStatus('unsupported')
+      return
+    }
+    if (isListeningRef.current) return
+
+    try {
+      if (!groqRecorderRef.current) {
+        groqRecorderRef.current = new GroqSttRecorder(GROQ_API_KEY, language, questionTitleRef.current)
+      } else {
+        groqRecorderRef.current.setLanguage(language)
+      }
+
+      await groqRecorderRef.current.startRecording()
+      isListeningRef.current = true
+      setStatus('listening')
+      setInterimTranscript('')
+    } catch (err) {
+      console.error('Groq recording start failed:', err)
+      setStatus('error')
+    }
+  }, [isGroqSupported, language])
+
+  // ============================================================
+  // GROQ — stop recording + transcribe
+  // ============================================================
+  const stopGroqRecording = useCallback(async () => {
+    if (!groqRecorderRef.current?.isRecording) {
+      isListeningRef.current = false
+      setStatus('idle')
+      return
+    }
+
+    try {
+      setStatus('processing')
+      isListeningRef.current = false
+      setInterimTranscript('Transcribing…')
+
+      const result = await groqRecorderRef.current.stopAndTranscribe()
+
+      setInterimTranscript('')
+      setStatus('idle')
+
+      if (result.text) {
+        onTranscriptRef.current?.(result.text, true)
+      }
+    } catch (err) {
+      console.error('Groq transcription failed:', err)
+      setInterimTranscript('')
+      setStatus('error')
+    } finally {
+      onSpeechEndRef.current?.()
+    }
+  }, [])
+
+  // ============================================================
+  // Public API — startListening / stopListening / toggleListening
+  // ============================================================
   const startListening = useCallback(() => {
     if (!isSupported) {
       setStatus('unsupported')
       return
     }
 
-    // Don't start if AI is speaking
+    // Stop TTS if it's playing
     if (isSpeaking) {
       synthRef.current?.cancel()
       setIsSpeaking(false)
     }
 
-    if (isListeningRef.current) return
-
-    const recognition = buildRecognition()
-    if (!recognition) return
-
-    recognitionRef.current = recognition
-
-    try {
-      recognition.start()
-    } catch (err) {
-      console.error('Failed to start recognition:', err)
-      setStatus('error')
+    if (provider === 'groq') {
+      void startGroqRecording()
+    } else {
+      if (isListeningRef.current) return
+      const recognition = buildWebSpeechRecognition()
+      if (!recognition) return
+      recognitionRef.current = recognition
+      try {
+        recognition.start()
+      } catch (err) {
+        console.error('Failed to start Web Speech recognition:', err)
+        setStatus('error')
+      }
     }
-  }, [isSupported, isSpeaking, buildRecognition])
+  }, [isSupported, isSpeaking, provider, startGroqRecording, buildWebSpeechRecognition])
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop()
-    isListeningRef.current = false
-    setStatus('idle')
-  }, [])
+    if (provider === 'groq') {
+      void stopGroqRecording()
+    } else {
+      recognitionRef.current?.stop()
+      isListeningRef.current = false
+      setStatus('idle')
+    }
+  }, [provider, stopGroqRecording])
 
   const toggleListening = useCallback(() => {
-    if (isListeningRef.current) {
+    if (isListeningRef.current || status === 'listening') {
       stopListening()
     } else {
       startListening()
     }
-  }, [startListening, stopListening])
+  }, [status, startListening, stopListening])
 
+  // ============================================================
+  // TTS — shared browser SpeechSynthesis
+  // ============================================================
   const speak = useCallback(
     (text: string, onEnd?: () => void) => {
       if (!('speechSynthesis' in window)) return
 
-      // Cancel any current speech
       synthRef.current?.cancel()
 
-      // Strip markdown formatting for cleaner TTS
+      // Strip markdown for cleaner TTS
       const cleanText = text
         .replace(/```[\s\S]*?```/g, 'code block')
         .replace(/`[^`]+`/g, '')
@@ -238,7 +365,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       utterance.pitch = 1.0
       utterance.volume = 1.0
 
-      // Prefer a natural voice if available
+      // Prefer a neural/natural voice if available
       const voices = synthRef.current?.getVoices() ?? []
       const preferred = voices.find(
         (v) =>
@@ -254,13 +381,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         setIsSpeaking(true)
         setStatus('speaking')
       }
-
       utterance.onend = () => {
         setIsSpeaking(false)
         setStatus('idle')
         onEnd?.()
       }
-
       utterance.onerror = () => {
         setIsSpeaking(false)
         setStatus('idle')
@@ -285,11 +410,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     isSpeaking,
     interimTranscript,
     language,
+    provider,
     startListening,
     stopListening,
     speak,
     stopSpeaking,
     setLanguage,
+    setQuestionTitle,
     toggleListening,
   }
 }

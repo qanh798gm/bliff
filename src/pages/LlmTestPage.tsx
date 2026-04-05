@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { streamChatCompletion, chatCompletion } from '../services/llm'
+import { GroqSttRecorder } from '../services/groqStt'
 import type { Message } from '../types'
 
 // ============================================================
@@ -224,6 +225,9 @@ export function LlmTestPage() {
           </div>
         </section>
 
+        {/* ── Voice Test section ── */}
+        <VoiceTestSection />
+
         {/* Env var reference */}
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
@@ -235,6 +239,8 @@ export function LlmTestPage() {
               ['VITE_LLM_MODEL', import.meta.env.VITE_LLM_MODEL],
               ['VITE_LLM_API_KEY', import.meta.env.VITE_LLM_API_KEY ? '••••••••' : '(not set)'],
               ['VITE_SUPABASE_URL', import.meta.env.VITE_SUPABASE_URL],
+              ['VITE_STT_PROVIDER', import.meta.env.VITE_STT_PROVIDER ?? 'webspeech (default)'],
+              ['VITE_GROQ_API_KEY', import.meta.env.VITE_GROQ_API_KEY ? '••••••••' : '(not set)'],
             ].map(([key, val]) => (
               <div key={key} className="flex gap-3">
                 <span className="text-indigo-400 w-48 shrink-0">{key}</span>
@@ -245,5 +251,177 @@ export function LlmTestPage() {
         </section>
       </div>
     </div>
+  )
+}
+
+// ── Voice Test Section ───────────────────────────────────────
+
+type VoiceTestStatus = 'idle' | 'recording' | 'processing' | 'done' | 'error'
+
+function VoiceTestSection() {
+  const [status, setStatus] = useState<VoiceTestStatus>('idle')
+  const [transcript, setTranscript] = useState('')
+  const [error, setError] = useState('')
+  const [latencyMs, setLatencyMs] = useState<number | undefined>()
+  const recorderRef = useRef<GroqSttRecorder | null>(null)
+
+  const provider = (import.meta.env.VITE_STT_PROVIDER ?? 'webspeech') as string
+  const groqKey = import.meta.env.VITE_GROQ_API_KEY as string | undefined
+  const isGroq = provider === 'groq' && !!groqKey
+
+  const startRecording = useCallback(async () => {
+    setStatus('recording')
+    setTranscript('')
+    setError('')
+    setLatencyMs(undefined)
+
+    if (isGroq) {
+      try {
+        recorderRef.current = new GroqSttRecorder(groqKey!, 'en-US')
+        await recorderRef.current.startRecording()
+      } catch (e) {
+        setStatus('error')
+        setError(String(e))
+      }
+    } else {
+      // Web Speech API quick test — use unknown cast to avoid re-declaring the full interfaces
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const win = window as any
+      const SpeechRecognitionImpl = win.SpeechRecognition ?? win.webkitSpeechRecognition
+      if (!SpeechRecognitionImpl) {
+        setStatus('error')
+        setError('SpeechRecognition not supported in this browser')
+        return
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rec: any = new SpeechRecognitionImpl()
+      rec.lang = 'en-US'
+      rec.interimResults = false
+      rec.maxAlternatives = 1
+      const t0 = Date.now()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rec.onresult = (e: any) => {
+        const text = e.results[0][0].transcript as string
+        setTranscript(text)
+        setLatencyMs(Date.now() - t0)
+        setStatus('done')
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rec.onerror = (e: any) => {
+        setStatus('error')
+        setError(`SpeechRecognition error: ${String(e.error)}`)
+      }
+      rec.onend = () => {
+        if (status === 'recording') setStatus('idle')
+      }
+      rec.start()
+    }
+  }, [isGroq, groqKey, status])
+
+  const stopRecording = useCallback(async () => {
+    if (!isGroq || !recorderRef.current) return
+    setStatus('processing')
+    const t0 = Date.now()
+    try {
+      const result = await recorderRef.current.stopAndTranscribe()
+      setTranscript(result.text)
+      setLatencyMs(Date.now() - t0)
+      setStatus('done')
+    } catch (e) {
+      setStatus('error')
+      setError(String(e))
+    }
+  }, [isGroq])
+
+  const statusColors: Record<VoiceTestStatus, string> = {
+    idle: 'border-gray-700 bg-gray-900',
+    recording: 'border-red-700 bg-red-950/30',
+    processing: 'border-yellow-700 bg-yellow-950/30',
+    done: 'border-green-700 bg-green-950/30',
+    error: 'border-red-700 bg-red-950/40',
+  }
+
+  const statusLabel: Record<VoiceTestStatus, string> = {
+    idle: 'Ready',
+    recording: '🔴 Recording…',
+    processing: '⏳ Transcribing…',
+    done: '✅ Done',
+    error: '❌ Error',
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+        Voice Test (STT)
+      </h2>
+      <div className={`border rounded-xl px-5 py-4 space-y-4 transition-colors ${statusColors[status]}`}>
+        {/* Provider info */}
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-gray-500">Provider:</span>
+          <span className={`font-semibold ${isGroq ? 'text-green-400' : 'text-yellow-400'}`}>
+            {isGroq ? '🚀 Groq Whisper (whisper-large-v3-turbo)' : '🌐 Web Speech API (browser built-in)'}
+          </span>
+        </div>
+
+        {!isGroq && provider === 'groq' && (
+          <p className="text-xs text-red-400">
+            ⚠️ VITE_STT_PROVIDER=groq but VITE_GROQ_API_KEY is missing — falling back to Web Speech API
+          </p>
+        )}
+
+        {/* Controls */}
+        <div className="flex items-center gap-3">
+          {status !== 'recording' ? (
+            <button
+              onClick={() => void startRecording()}
+              disabled={status === 'processing'}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              🎙 {status === 'processing' ? 'Transcribing…' : 'Start Recording'}
+            </button>
+          ) : (
+            isGroq ? (
+              <button
+                onClick={() => void stopRecording()}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                ⏹ Stop & Transcribe
+              </button>
+            ) : (
+              <span className="text-sm text-red-400 animate-pulse">🔴 Listening… (speak now)</span>
+            )
+          )}
+
+          <span className="text-xs text-gray-500">{statusLabel[status]}</span>
+          {latencyMs !== undefined && (
+            <span className="text-xs text-gray-500 tabular-nums ml-auto">{latencyMs} ms</span>
+          )}
+        </div>
+
+        {/* Instructions */}
+        {status === 'idle' && (
+          <p className="text-xs text-gray-600">
+            {isGroq
+              ? 'Click Start → speak → click Stop & Transcribe. The audio will be sent to Groq Whisper.'
+              : 'Click Start → speak. The browser will transcribe locally using Web Speech API.'}
+          </p>
+        )}
+
+        {/* Transcript */}
+        {transcript && (
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Transcript:</p>
+            <pre className="text-sm text-gray-100 bg-gray-950 rounded-lg p-3 whitespace-pre-wrap font-mono">
+              {transcript}
+            </pre>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <p className="text-xs text-red-400 font-mono">{error}</p>
+        )}
+      </div>
+    </section>
   )
 }

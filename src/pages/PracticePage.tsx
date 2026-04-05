@@ -26,8 +26,6 @@ export function PracticePage() {
   const [textInput, setTextInput] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [viewingSolution, setViewingSolution] = useState<UserSolution | null>(null)
-  const [language, setLanguage] = useState<VoiceLanguage>('en-US')
-
   // Sync editor to question signature when question loads
   const [lastSignature, setLastSignature] = useState(practice.question.functionSignature)
   if (practice.question.functionSignature !== lastSignature) {
@@ -36,13 +34,15 @@ export function PracticePage() {
   }
 
   const voice = useVoice({
-    language,
+    questionTitle: practice.question.title,
     onTranscript: (text, isFinal) => {
       if (isFinal && practice.aiMode === 'chat') {
         void practice.sendMessage(text)
       }
     },
   })
+  const language = voice.language
+  const setLanguage = voice.setLanguage
 
   const handleRunTests = useCallback(() => {
     void practice.runTests(code)

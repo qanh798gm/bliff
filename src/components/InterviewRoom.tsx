@@ -7,7 +7,6 @@ import { CodeEditor } from './CodeEditor'
 import { VoiceControls } from './VoiceControls'
 import { QuestionPanel } from './QuestionPanel'
 import { TestResultsPanel } from './TestResultsPanel'
-import type { VoiceLanguage } from '../types'
 
 // ── Timer hook ───────────────────────────────────────────────
 function useTimer(running: boolean) {
@@ -46,8 +45,6 @@ export function InterviewRoom() {
   const navigate = useNavigate()
   const [code, setCode] = useState(interview.question.functionSignature)
   const [textInput, setTextInput] = useState('')
-  const [language, setLanguage] = useState<VoiceLanguage>('en-US')
-
   // Reset editor to the fetched question's function signature whenever the question changes
   useEffect(() => {
     setCode(interview.question.functionSignature)
@@ -60,13 +57,15 @@ export function InterviewRoom() {
   const lastSpokenRef = useRef<string>('')
 
   const voice = useVoice({
-    language,
+    questionTitle: interview.question.title,
     onTranscript: (text, isFinal) => {
       if (isFinal) {
         void interview.sendMessage(text)
       }
     },
   })
+  const language = voice.language
+  const setLanguage = voice.setLanguage
 
   // Speak new AI messages via TTS
   const latestAssistantMessage = [...interview.messages]
